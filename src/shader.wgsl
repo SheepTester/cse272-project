@@ -36,7 +36,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
 
-    return vec4(ray.dir * 10.0, 1.0);
+    return vec4(ray.dir * 50.0, 1.0);
 }
 
 // PRNG for GPU

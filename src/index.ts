@@ -77,7 +77,7 @@ const sampleToCam = device.createBuffer({
   size: 4 * 4 * 4,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 })
-const aspect = 1 // canvas.width / canvas.height
+const aspect = canvas.width / canvas.height
 const fov = Math.PI / 4
 const cot = 1 / Math.tan(fov / 2)
 // as tzumao intended
