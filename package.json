@@ -1,0 +1,17 @@
+{
+  "name": "cse272-project",
+  "version": "0.1.0",
+  "description": "WebGPU volumetric renderer for CSE 272",
+  "main": "public/index.js",
+  "scripts": {
+    "build": "esbuild --bundle --minify --outdir=public/ src/index.ts",
+    "dev": "esbuild --bundle --minify --outdir=public/ --servedir=public/ src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Sean Yen",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.25.1"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+
+public/index.js
+public/index.js.map
+
+# https://piazza.com/class/m5ke562n9z969v/post/110
+vol_path_tracing.h
