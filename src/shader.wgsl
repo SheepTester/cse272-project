@@ -22,17 +22,17 @@ fn vertex_main(
 
 @fragment
 fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
-    var seed = seed_per_thread(u32(vertex.uv.x * canvas_size.x) + u32(vertex.uv.y * canvas_size.y));
+    var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
     seed = next_seed(seed);
 
     let r = seed_to_float(seed);
     seed = next_seed(seed);
     let g = seed_to_float(seed);
     seed = next_seed(seed);
-    // let b = seed_to_float(seed);
-    // seed = next_seed(seed);
+    let b = seed_to_float(seed);
+    seed = next_seed(seed);
 
-    return vec4(r, g, canvas_size.y / 300.0, 1.0);
+    return vec4(r, g, b, 1.0);
 }
 
 // PRNG for GPU
