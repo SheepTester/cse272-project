@@ -62,6 +62,21 @@ const pipeline = device.createRenderPipeline({
   }
 })
 
+const screenSize = device.createBuffer({
+  size: 2 * 4,
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+})
+device.queue.writeBuffer(
+  screenSize,
+  0,
+  new Float32Array([canvas.width, canvas.height])
+)
+
+const uniforms = device.createBindGroup({
+  layout: pipeline.getBindGroupLayout(0),
+  entries: [{ binding: 0, resource: { buffer: screenSize } }]
+})
+
 await check()
 
 do {
@@ -87,6 +102,7 @@ do {
     }
   })
   pass.setPipeline(pipeline)
+  pass.setBindGroup(0, uniforms)
   pass.draw(6)
   pass.end()
   device.queue.submit([encoder.finish()])
@@ -94,10 +110,12 @@ do {
   resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
     const times = new BigInt64Array(resultBuffer.getMappedRange())
     const gpuTime = times[1] - times[0]
+    console.log('gpu time', gpuTime)
     resultBuffer.unmap()
   })
 
   const cpuTime = performance.now() - start
+  console.log('cpu time', cpuTime)
 
   await Promise.all([check(), new Promise(window.requestAnimationFrame)])
 } while (false)
