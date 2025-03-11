@@ -4,6 +4,8 @@ struct VertexOutput {
 };
 
 @group(0) @binding(0) var<uniform> canvas_size: vec2<f32>;
+@group(0) @binding(1) var<uniform> sample_to_cam: mat4x4<f32>;
+@group(0) @binding(2) var<uniform> cam_to_world: mat4x4<f32>;
 
 @vertex
 fn vertex_main(
@@ -25,14 +27,16 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
     seed = next_seed(seed);
 
-    let r = seed_to_float(seed);
+    let dx = seed_to_float(seed);
     seed = next_seed(seed);
-    let g = seed_to_float(seed);
+    let dy = seed_to_float(seed);
     seed = next_seed(seed);
-    let b = seed_to_float(seed);
-    seed = next_seed(seed);
+    let offset = box_filter(vec2(dx, dy));
+    let remapped_pos = vertex.uv + (vec2(0.5) + offset) / canvas_size;
+    let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
+    let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
 
-    return vec4(r, g, b, 1.0);
+    return vec4(ray.dir, 1.0);
 }
 
 // PRNG for GPU
@@ -60,3 +64,18 @@ fn next_seed(seed: u32) -> u32 {
 fn seed_to_float(seed: u32) -> f32 {
     return f32(seed) * 2.3283064365387e-10;
 }
+
+// Filters: default box filter for now
+
+const FILTER_WIDTH: f32 = 1.0;
+fn box_filter(rand: vec2<f32>) -> vec2<f32> {
+    // Warp [0, 1]^2 to [-width/2, width/2]^2
+    return (2.0 * rand - 1.0) * (FILTER_WIDTH / 2);
+}
+
+// Rays
+
+struct Ray {
+    origin: vec3<f32>,
+    dir: vec3<f32>,
+};

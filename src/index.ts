@@ -1,5 +1,6 @@
 import { captureError } from './utils'
 import shaderCode from './shader.wgsl'
+import { mat4 } from 'wgpu-matrix'
 
 const canvas = document.getElementById('canvas')
 if (!(canvas instanceof HTMLCanvasElement)) {
@@ -72,9 +73,55 @@ device.queue.writeBuffer(
   new Float32Array([canvas.width, canvas.height])
 )
 
+const sampleToCam = device.createBuffer({
+  size: 4 * 4 * 4,
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+})
+const aspect = canvas.width / canvas.height
+const fov = Math.PI / 4
+const cot = 1 / Math.tan(fov / 2)
+// as tzumao intended
+const perspective = mat4.create(
+  cot,
+  0,
+  0,
+  0,
+  0,
+  cot,
+  0,
+  0,
+  0,
+  0,
+  1,
+  -1,
+  0,
+  0,
+  1,
+  0
+)
+const m = mat4.identity()
+mat4.scale(m, [-0.5, -0.5 * aspect, 1])
+mat4.translate(m, [-1, -1 / aspect, 0])
+mat4.multiply(m, perspective)
+device.queue.writeBuffer(sampleToCam, 0, mat4.inverse<Float32Array>(m))
+
+const camToWorld = device.createBuffer({
+  size: 4 * 4 * 4,
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+})
+device.queue.writeBuffer(
+  camToWorld,
+  0,
+  mat4.lookAt([0, 0, -3], [0, 0, 0], [0, 1, 0], mat4.create())
+)
+
 const uniforms = device.createBindGroup({
   layout: pipeline.getBindGroupLayout(0),
-  entries: [{ binding: 0, resource: { buffer: screenSize } }]
+  entries: [
+    { binding: 0, resource: { buffer: screenSize } },
+    { binding: 1, resource: { buffer: sampleToCam } },
+    { binding: 2, resource: { buffer: camToWorld } }
+  ]
 })
 
 await check()
