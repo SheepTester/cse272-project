@@ -17,7 +17,7 @@ fn vertex_main(
     );
 
     var result: VertexOutput;
-    result.position = vec4(square_vertices[index] * 2.0 - vec2(1.0), 0.0, 1.0);
+    result.position = vec4(vec2(square_vertices[index].x * 2.0 - 1.0, 1.0 - 2.0 * square_vertices[index].y), 0.0, 1.0);
     result.uv = square_vertices[index];
     return result;
 }
@@ -36,7 +36,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
 
-    return vec4(ray.dir, 1.0);
+    return vec4(ray.dir * 10.0, 1.0);
 }
 
 // PRNG for GPU

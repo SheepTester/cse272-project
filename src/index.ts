@@ -77,7 +77,7 @@ const sampleToCam = device.createBuffer({
   size: 4 * 4 * 4,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 })
-const aspect = canvas.width / canvas.height
+const aspect = 1 // canvas.width / canvas.height
 const fov = Math.PI / 4
 const cot = 1 / Math.tan(fov / 2)
 // as tzumao intended
@@ -99,11 +99,13 @@ const perspective = mat4.create(
   1,
   0
 )
+mat4.transpose(perspective, perspective)
 const m = mat4.identity()
-mat4.scale(m, [-0.5, -0.5 * aspect, 1])
-mat4.translate(m, [-1, -1 / aspect, 0])
-mat4.multiply(m, perspective)
+mat4.scale(m, [-0.5, -0.5 * aspect, 1], m)
+mat4.translate(m, [-1, -1 / aspect, 0], m)
+mat4.multiply(m, perspective, m)
 device.queue.writeBuffer(sampleToCam, 0, mat4.inverse<Float32Array>(m))
+console.log(mat4.inverse<Float32Array>(m))
 
 const camToWorld = device.createBuffer({
   size: 4 * 4 * 4,
@@ -112,8 +114,9 @@ const camToWorld = device.createBuffer({
 device.queue.writeBuffer(
   camToWorld,
   0,
-  mat4.lookAt([0, 0, -3], [0, 0, 0], [0, 1, 0], mat4.create())
+  mat4.aim([0, 0, -3], [0, 0, 0], [0, 1, 0], mat4.create())
 )
+console.log(mat4.aim([0, 0, -3], [0, 0, 0], [0, 1, 0]))
 
 const uniforms = device.createBindGroup({
   layout: pipeline.getBindGroupLayout(0),
