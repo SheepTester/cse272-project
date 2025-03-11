@@ -4,14 +4,16 @@
   "description": "WebGPU volumetric renderer for CSE 272",
   "main": "public/index.js",
   "scripts": {
-    "build": "esbuild --bundle --minify --outdir=public/ src/index.ts",
-    "dev": "esbuild --bundle --minify --outdir=public/ --servedir=public/ src/index.ts",
+    "build": "esbuild --bundle --minify --format=esm --loader:.wgsl=text --outdir=public/ src/index.ts",
+    "dev": "esbuild --bundle --minify --format=esm --loader:.wgsl=text --outdir=public/ --servedir=public/ src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "Sean Yen",
   "license": "MIT",
   "devDependencies": {
-    "esbuild": "^0.25.1"
+    "@webgpu/types": "^0.1.55",
+    "esbuild": "^0.25.1",
+    "prettierx": "^0.19.0"
   }
 }

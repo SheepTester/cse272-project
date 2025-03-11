@@ -1,3 +1,8 @@
 {
-  "C_Cpp.errorSquiggles": "disabled"
+  "C_Cpp.errorSquiggles": "disabled",
+  "[wgsl]": {
+    "editor.tabSize": 4
+  },
+  // "wgsl-analyzer.server.path": "~/.cargo/bin/wgsl_analyzer",
+  "prettier.prettierPath": "./node_modules/prettierx"
 }
