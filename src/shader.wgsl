@@ -1,3 +1,5 @@
+const PI = radians(180.0);
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -22,6 +24,82 @@ fn vertex_main(
     return result;
 }
 
+struct Medium {
+    // homogeneous mediums for now
+    sigma_s: f32,
+    sigma_a: f32,
+}
+
+struct Sphere {
+    material_id: i32,
+    area_light_id: i32,
+    interior_medium_id: i32,
+    exterior_medium_id: i32,
+
+    center: vec3<f32>,
+    radius: f32,
+}
+
+struct Light {
+    shape_id: i32,
+    // aka intensity
+    radiance: vec3<f32>,
+}
+
+// volpath_test1
+const scene_media: array<Medium, 1> = array(Medium(0.5 * 3, 0 * 3));
+const scene_shapes: array<Sphere, 1> = array(Sphere(-1, -1, -1, 0, vec3(0), 1));
+const scene_light: array<Light, 1> = array(Light(0, vec3(0.4, 2.32, 3.2)));
+
+struct IntersectResult {
+    shape_id: i32,
+    distance: f32,
+}
+
+/// returns index of shape, or -1 if none
+fn intersect_scene(ray: Ray) -> IntersectResult {
+    var best = IntersectResult(-1, 1.0e5); // infinity not supported
+    for (var i = 0; i < 1; i++) {
+        let sphere = scene_shapes[i];
+
+        // thanks ChatGPT
+        let origin_to_center = ray.origin - sphere.center;
+
+        let direction_dot = dot(ray.dir, ray.dir);
+        let b_term = 2.0 * dot(origin_to_center, ray.dir);
+        let c_term = dot(origin_to_center, origin_to_center) - sphere.radius * sphere.radius;
+
+        let discriminant = b_term * b_term - 4.0 * direction_dot * c_term;
+
+        if discriminant < 0.0 {
+            // No intersection
+            continue;
+        }
+
+        let sqrt_discriminant = sqrt(discriminant);
+        let t_near = (-b_term - sqrt_discriminant) / (2.0 * direction_dot);
+        let t_far = (-b_term + sqrt_discriminant) / (2.0 * direction_dot);
+
+        if t_near > 0.0 {
+            // Closest valid intersection
+            if (t_near < best.distance) {
+                best.shape_id = i;
+                best.distance = t_near;
+            }
+            continue;
+        }
+        if t_far > 0.0 {
+            // Ray starts inside the sphere
+            if (t_far < best.distance) {
+                best.shape_id = i;
+                best.distance = t_far;
+            }
+            continue;
+        }
+    }
+    return best;
+}
+
 @fragment
 fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
@@ -31,12 +109,13 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     seed = next_seed(seed);
     let dy = seed_to_float(seed);
     seed = next_seed(seed);
-    let offset = box_filter(vec2(dx, dy));
+    let offset = gaussian_filter(vec2(dx, dy));
     let remapped_pos = vertex.uv + (vec2(0.5) + offset) / canvas_size;
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
+    let result = intersect_scene(ray);
 
-    return vec4(ray.dir * 50.0, 1.0);
+    return vec4(f32(result.shape_id) + 1.0, ray.dir.yz * 50.0, 1.0);
 }
 
 // PRNG for GPU
@@ -71,6 +150,16 @@ const FILTER_WIDTH: f32 = 1.0;
 fn box_filter(rand: vec2<f32>) -> vec2<f32> {
     // Warp [0, 1]^2 to [-width/2, width/2]^2
     return (2.0 * rand - 1.0) * (FILTER_WIDTH / 2);
+}
+
+// defaults to 0.5
+const FILTER_STDDEV: f32 = 0.5;
+fn gaussian_filter(rand: vec2<f32>) -> vec2<f32> {
+    let r = FILTER_STDDEV * sqrt(-2 * log(max(rand.x, 1e-8)));
+    return vec2(
+        r * cos(2 * PI * rand.y),
+        r * sin(2 * PI * rand.y),
+    );
 }
 
 // Rays
