@@ -118,7 +118,6 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let result = intersect_scene(ray);
-    let vertex_position = ray.origin + result.distance * ray.dir;
 
     let medium = scene_media[current_medium_id];
     var max_t = INFINITY;
@@ -131,6 +130,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     if (t >= max_t) {
         if (result.shape_id != -1) {
+            let vertex_position = ray.origin + result.distance * ray.dir;
             let shape = scene_shapes[result.shape_id];
             if (shape.light_id != -1) {
                 let vertex_normal = normalize(vertex_position - shape.center);
@@ -140,15 +140,11 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         return vec4(radiance, 1);
     }
 
-    if (result.shape_id == -1) {
-        return vec4(vec3(0), 1);
-    }
-
-    let shape = scene_shapes[result.shape_id];
+    let vertex_position = ray.origin + t * ray.dir;
     let vertex_interior_medium_id = current_medium_id;
     let vertex_exterior_medium_id = current_medium_id;
 
-    let transmittance = exp(-sigma_t * t);
+    let transmittance = 1 / sigma_t;
 
     var c1 = vec3(0.0);
     {
@@ -157,13 +153,15 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         let shape_w = rand(&seed);
         var light_id = 0;
         for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
-            if (scene_lights[i].cdf > shape_w) {
+            if (scene_lights[i].cdf > light_w) {
                 light_id = i;
                 break;
             }
         }
+        // return vec4(1.0, 0.0, f32(light_id), 1.0);
         let light = scene_lights[light_id];
         let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
+        // return vec4(point_on_light.normal * 0.5 + 0.5, 1);
         var g = 0.0;
         let dir_light = normalize(point_on_light.position - vertex_position);
         let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
@@ -175,12 +173,14 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         if (g > 0 && p1 > 0) {
             let dir_view = -ray.dir;
             let f = eval_phase_function(dir_view, dir_light);
-            let l = select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
+            let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
             let t = exp(-sigma_t * distance(vertex_position, point_on_light.position));
             c1 = medium.sigma_s * transmittance * t * g * f * l / p1;
         }
+        // else { c1 = vec3(1.0, 0.0, 0); }
     }
     radiance += c1;
+    // radiance += vec3(0.5);
     return vec4(radiance, 1);
 }
 
@@ -295,9 +295,14 @@ fn to_world_frame(n: vec3<f32>, v: vec3<f32>) -> vec3<f32> {
     let x = select(
         vec3(1 - n.x * n.x * a, b, -n.x),
         vec3(0, -1, 0),
-        n.z < -1 + 1e-6,
+        n.z < -1 + 1.0e-6,
     );
-    return x * v;
+    let y = select(
+        vec3(b, 1 - n.y * n.y * a, -n.y),
+        vec3(-1, 0, 0),
+        n.z < -1 + 1.0e-6,
+    );
+    return mat3x3(x, y, n) * v;
 }
 
 fn distance_squared(a: vec3<f32>, b: vec3<f32>) -> f32 {
