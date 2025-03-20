@@ -49,6 +49,7 @@ struct Sphere {
 struct Light {
     // aka radiance
     intensity: vec3<f32>,
+    cdf: f32,
     shape_id: i32,
 }
 
@@ -154,7 +155,13 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         let light_uv = vec2(rand(&seed), rand(&seed));
         let light_w = rand(&seed);
         let shape_w = rand(&seed);
-        let light_id = 1; // TODO: sample light
+        var light_id = 0;
+        for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
+            if (scene_lights[i].cdf > shape_w) {
+                light_id = i;
+                break;
+            }
+        }
         let light = scene_lights[light_id];
         let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
         var g = 0.0;
@@ -163,12 +170,12 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         if (true) { // TODO: !occluded(scene, shadow_ray)
             g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
         }
-        // TODO: p1
-        let p1 = 1.0;
+        let p1 = (light.cdf - select(0, scene_lights[max(0, light_id - 1)].cdf, light_id > 0)) *
+            pdf_point_on_sphere(scene_shapes[light.shape_id], point_on_light, vertex_position);
         if (g > 0 && p1 > 0) {
             let dir_view = -ray.dir;
             let f = eval_phase_function(dir_view, dir_light);
-            let l = select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0); // TODO: sus
+            let l = select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
             let t = exp(-sigma_t * distance(vertex_position, point_on_light.position));
             c1 = medium.sigma_s * transmittance * t * g * f * l / p1;
         }
@@ -296,4 +303,18 @@ fn to_world_frame(n: vec3<f32>, v: vec3<f32>) -> vec3<f32> {
 fn distance_squared(a: vec3<f32>, b: vec3<f32>) -> f32 {
     let diff = a - b;
     return dot(diff, diff);
+}
+
+fn pdf_point_on_sphere(sphere: Sphere, point_on_shape: PointAndNormal, ref_point: vec3<f32>) -> f32 {
+    if (distance_squared(ref_point, sphere.center) < sphere.radius * sphere.radius) {
+        return 1 / (4 * PI * sphere.radius * sphere.radius);
+    }
+    let sin_elevation_max_sq = sphere.radius * sphere.radius / distance_squared(ref_point, sphere.center);
+    let cos_elevation_max = sqrt(max(0.0, 1.0 - sin_elevation_max_sq));
+    let pdf_solid_angle = 1 / (2 * PI * (1.0 - cos_elevation_max));
+    let p_on_sphere = point_on_shape.position;
+    let n_on_sphere = point_on_shape.normal;
+    let dir = normalize(p_on_sphere - ref_point);
+    return pdf_solid_angle * abs(dot(n_on_sphere, dir)) /
+        distance_squared(ref_point, p_on_sphere);
 }
