@@ -9,6 +9,10 @@ struct VertexOutput {
 @group(0) @binding(0) var<uniform> canvas_size: vec2<f32>;
 @group(0) @binding(1) var<uniform> sample_to_cam: mat4x4<f32>;
 @group(0) @binding(2) var<uniform> cam_to_world: mat4x4<f32>;
+@group(0) @binding(3) var<storage, read> scene_media: array<Medium>;
+@group(0) @binding(4) var<storage, read> scene_shapes: array<Sphere>;
+@group(0) @binding(5) var<storage, read> scene_lights: array<Light>;
+@group(0) @binding(6) var<uniform> camera_medium_id: i32;
 
 @vertex
 fn vertex_main(
@@ -37,28 +41,16 @@ struct Sphere {
     interior_medium_id: i32,
     exterior_medium_id: i32,
 
-    center: vec3<f32>,
     radius: f32,
+    // vec3 has 4-byte alignment
+    center: vec3<f32>,
 }
 
 struct Light {
-    shape_id: i32,
     // aka radiance
     intensity: vec3<f32>,
+    shape_id: i32,
 }
-
-// volpath_test1
-const scene_media = array(Medium(0.1 * 1, 0.7 * 1));
-const scene_shape_count = 2;
-const scene_shapes = array(
-    Sphere(0, -1, 0, vec3(0), 1), // shape 0
-    Sphere(1, -1, 0, vec3(-3, 0, -1.5), 1), // shape 1
-);
-const scene_lights = array(
-    Light(0, vec3(0.4, 2.32, 3.2)), // light 0
-    Light(1, vec3(24, 10, 24)), // light 1
-);
-const camera_medium_id = 0;
 
 struct IntersectResult {
     shape_id: i32,
@@ -68,7 +60,7 @@ struct IntersectResult {
 /// returns index of shape, or -1 if none
 fn intersect_scene(ray: Ray) -> IntersectResult {
     var best = IntersectResult(-1, INFINITY); // infinity not supported
-    for (var i = 0; i < scene_shape_count; i++) {
+    for (var i = 0; i < i32(arrayLength(&scene_shapes)); i++) {
         let sphere = scene_shapes[i];
 
         // thanks ChatGPT

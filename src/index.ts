@@ -1,6 +1,7 @@
 import { captureError } from './utils'
 import shaderCode from './shader.wgsl'
-import { mat4 } from 'wgpu-matrix'
+import { mat4, vec3 } from 'wgpu-matrix'
+import { Medium, toData } from './scene'
 
 const canvas = document.getElementById('canvas')
 if (!(canvas instanceof HTMLCanvasElement)) {
@@ -116,12 +117,61 @@ device.queue.writeBuffer(
   mat4.aim([0, 0, -3], [0, 0, 0], [0, 1, 0], mat4.create())
 )
 
+const medium: Medium = { sigmaA: 0.1, sigmaS: 0.7 }
+const { media, shapes, lights, cameraMedium } = toData({
+  media: [medium],
+  shapes: [
+    {
+      center: vec3.fromValues(0, 0, 0),
+      radius: 1,
+      exterior: medium,
+      light: {
+        intensity: vec3.fromValues(0.4, 2.32, 3.2)
+      }
+    },
+    {
+      center: vec3.fromValues(-3, 0, -1.5),
+      radius: 1,
+      exterior: medium,
+      light: {
+        intensity: vec3.fromValues(24, 10, 24)
+      }
+    }
+  ],
+  cameraMedium: medium
+})
+
+const mediaBuffer = device.createBuffer({
+  size: media.buffer.byteLength,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+})
+device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
+const shapesBuffer = device.createBuffer({
+  size: shapes.buffer.byteLength,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+})
+device.queue.writeBuffer(shapesBuffer, 0, shapes.buffer)
+const lightsBuffer = device.createBuffer({
+  size: lights.buffer.byteLength,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+})
+device.queue.writeBuffer(lightsBuffer, 0, lights.buffer)
+const cameraMediumBuffer = device.createBuffer({
+  size: cameraMedium.buffer.byteLength,
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+})
+device.queue.writeBuffer(cameraMediumBuffer, 0, cameraMedium.buffer)
+
 const uniforms = device.createBindGroup({
   layout: pipeline.getBindGroupLayout(0),
   entries: [
     { binding: 0, resource: { buffer: screenSize } },
     { binding: 1, resource: { buffer: sampleToCam } },
-    { binding: 2, resource: { buffer: camToWorld } }
+    { binding: 2, resource: { buffer: camToWorld } },
+    { binding: 3, resource: { buffer: mediaBuffer } },
+    { binding: 4, resource: { buffer: shapesBuffer } },
+    { binding: 5, resource: { buffer: lightsBuffer } },
+    { binding: 6, resource: { buffer: cameraMediumBuffer } }
   ]
 })
 
