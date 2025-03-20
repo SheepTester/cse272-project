@@ -178,6 +178,92 @@ const uniforms = device.createBindGroup({
 
 await check()
 
+const camera = {
+  x: 0,
+  y: 0,
+  z: -3,
+  xv: 0,
+  yv: 0,
+  zv: 0,
+  rx: 0,
+  ry: 0
+}
+const keys = {
+  forward: false,
+  backward: false,
+  left: false,
+  right: false,
+  up: false,
+  down: false
+}
+const keyMap: Record<string, keyof typeof keys> = {
+  w: 'forward',
+  a: 'left',
+  s: 'backward',
+  d: 'right',
+  ' ': 'up',
+  shift: 'down'
+}
+document.addEventListener('keydown', e => {
+  const key = keyMap[e.key.toLowerCase()]
+  if (key) {
+    keys[key] = true
+  }
+})
+document.addEventListener('keyup', e => {
+  const key = keyMap[e.key.toLowerCase()]
+  if (key) {
+    keys[key] = false
+  }
+})
+document.addEventListener('blur', () => {
+  for (const key of Object.values(keyMap)) {
+    keys[key] = false
+  }
+})
+canvas.addEventListener('click', async () => {
+  await canvas.requestPointerLock({ unadjustedMovement: true })
+})
+canvas.addEventListener('mousemove', e => {
+  if (document.pointerLockElement === canvas) {
+    handleMouseMove(e)
+  }
+})
+type DragState = { pointerId: number; lastX: number; lastY: number }
+let dragState: DragState | null = null
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch' && !dragState) {
+    dragState = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY }
+    canvas.setPointerCapture(e.pointerId)
+  }
+})
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerId === dragState?.pointerId) {
+    const movementX = e.clientX - dragState.lastX
+    const movementY = e.clientY - dragState.lastY
+    handleMouseMove({ movementX, movementY })
+    dragState.lastX = e.clientX
+    dragState.lastY = e.clientY
+  }
+})
+const handlePointerEnd = (e: PointerEvent) => {
+  if (e.pointerId === dragState?.pointerId) {
+    dragState = null
+  }
+}
+canvas.addEventListener('pointerup', handlePointerEnd)
+canvas.addEventListener('pointercancel', handlePointerEnd)
+function handleMouseMove ({
+  movementX,
+  movementY
+}: {
+  movementX: number
+  movementY: number
+}) {
+  camera.rx += movementY / 400
+  camera.ry -= movementX / 400
+}
+
 do {
   const start = performance.now()
 
@@ -218,15 +304,15 @@ do {
 
   await Promise.all([check(), new Promise(window.requestAnimationFrame), bruh])
 
-  scene.shapes[0].center = vec3.fromValues(
-    0,
-    Math.sin(Date.now() / 1000),
-    Math.cos(Date.now() / 1789) + 1
-  )
+  // scene.shapes[0].center = vec3.fromValues(
+  //   0,
+  //   Math.sin(Date.now() / 1000),
+  //   Math.cos(Date.now() / 1789) + 1
+  // )
   scene.shapes[1].center = vec3.fromValues(
-    Math.sin(Date.now() / 2837) * 5,
+    Math.sin(Date.now() / -2837) * 5,
     0,
-    Math.cos(Date.now() / 2837) * 5
+    Math.cos(Date.now() / -2837) * 5
   )
 
   const { media, shapes, lights, cameraMedium } = toData(scene)
@@ -234,4 +320,70 @@ do {
   device.queue.writeBuffer(shapesBuffer, 0, shapes.buffer)
   device.queue.writeBuffer(lightsBuffer, 0, lights.buffer)
   device.queue.writeBuffer(cameraMediumBuffer, 0, cameraMedium.buffer)
+
+  /** 1/s */
+  const DRAG_CONST = 0.5
+  /** units / s^2 */
+  const ACCEL_CONST = 10
+  const t = Math.min((performance.now() - start) / 1000, 0.1)
+  const acceleration = {
+    x: -camera.xv * DRAG_CONST,
+    y: -camera.yv * DRAG_CONST,
+    z: -camera.zv * DRAG_CONST
+  }
+  if (keys.left) acceleration.x = -ACCEL_CONST
+  if (keys.right) acceleration.x = ACCEL_CONST
+  if (keys.down) acceleration.y = -ACCEL_CONST
+  if (keys.up) acceleration.y = ACCEL_CONST
+  if (keys.backward) acceleration.z = -ACCEL_CONST
+  if (keys.forward) acceleration.z = ACCEL_CONST
+  ;[acceleration.x, acceleration.z] = [
+    acceleration.x * Math.cos(camera.ry) - acceleration.z * Math.sin(camera.ry),
+    acceleration.x * Math.sin(camera.ry) + acceleration.z * Math.cos(camera.ry)
+  ]
+  camera.x += t * camera.xv + 0.5 * acceleration.x * t * t
+  camera.y += t * camera.yv + 0.5 * acceleration.y * t * t
+  camera.z += t * camera.zv + 0.5 * acceleration.z * t * t
+  const newVelocity = {
+    x: camera.xv + acceleration.x * t,
+    y: camera.yv + acceleration.y * t,
+    z: camera.zv + acceleration.z * t
+  }
+  if (
+    keys.left ||
+    keys.right ||
+    Math.sign(camera.xv) === Math.sign(newVelocity.x)
+  ) {
+    camera.xv = newVelocity.x
+  } else {
+    camera.xv = 0
+  }
+  if (
+    keys.down ||
+    keys.up ||
+    Math.sign(camera.yv) === Math.sign(newVelocity.y)
+  ) {
+    camera.yv = newVelocity.y
+  } else {
+    camera.yv = 0
+  }
+  if (
+    keys.backward ||
+    keys.forward ||
+    Math.sign(camera.zv) === Math.sign(newVelocity.z)
+  ) {
+    camera.zv = newVelocity.z
+  } else {
+    camera.zv = 0
+  }
+
+  const cameraTransform = mat4.identity()
+  mat4.translate(
+    cameraTransform,
+    [camera.x, camera.y, camera.z],
+    cameraTransform
+  )
+  mat4.rotateY(cameraTransform, camera.ry, cameraTransform)
+  mat4.rotateX(cameraTransform, camera.rx, cameraTransform)
+  device.queue.writeBuffer(camToWorld, 0, cameraTransform)
 } while (true)
