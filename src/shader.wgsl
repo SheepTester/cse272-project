@@ -31,8 +31,8 @@ struct Medium {
 }
 
 struct Sphere {
-    material_id: i32,
-    area_light_id: i32,
+    // material_id: i32,
+    light_id: i32,
     interior_medium_id: i32,
     exterior_medium_id: i32,
 
@@ -42,14 +42,15 @@ struct Sphere {
 
 struct Light {
     shape_id: i32,
-    // aka intensity
-    radiance: vec3<f32>,
+    // aka radiance
+    intensity: vec3<f32>,
 }
 
 // volpath_test1
 const scene_media: array<Medium, 1> = array(Medium(0.5 * 3, 0 * 3));
-const scene_shapes: array<Sphere, 1> = array(Sphere(-1, -1, -1, 0, vec3(0), 1));
+const scene_shapes: array<Sphere, 1> = array(Sphere(0, -1, 0, vec3(0), 1));
 const scene_light: array<Light, 1> = array(Light(0, vec3(0.4, 2.32, 3.2)));
+const camera_medium_id: i32 = 0;
 
 struct IntersectResult {
     shape_id: i32,
@@ -113,9 +114,29 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let remapped_pos = vertex.uv + (vec2(0.5) + offset) / canvas_size;
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
+
+    let current_medium_id = camera_medium_id;
+
     let result = intersect_scene(ray);
 
-    return vec4(f32(result.shape_id) + 1.0, ray.dir.yz * 50.0, 1.0);
+    if (result.shape_id == -1) {
+        return vec4(vec3(0), 1);
+    }
+
+    let shape = scene_shapes[result.shape_id];
+
+    if (shape.light_id == -1) {
+        return vec4(vec3(0), 1);
+    }
+
+    var transmittance = vec3(1.0);
+    if (current_medium_id >= 0) {
+        let medium = scene_media[current_medium_id];
+        let sigma_t = medium.sigma_a + medium.sigma_s;
+        let t = result.distance;
+        transmittance *= exp(-sigma_t * t);
+    }
+    return vec4(transmittance * scene_light[shape.light_id].intensity, 1);
 }
 
 // PRNG for GPU
