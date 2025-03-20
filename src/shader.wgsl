@@ -48,17 +48,17 @@ struct Light {
 }
 
 // volpath_test1
-const scene_media: array<Medium, 1> = array(Medium(0.1 * 1, 0.7 * 1));
-const scene_shape_count: i32 = 2;
-const scene_shapes: array<Sphere, scene_shape_count> = array(
+const scene_media = array(Medium(0.1 * 1, 0.7 * 1));
+const scene_shape_count = 2;
+const scene_shapes = array(
     Sphere(0, -1, 0, vec3(0), 1), // shape 0
     Sphere(1, -1, 0, vec3(-3, 0, -1.5), 1), // shape 1
 );
-const scene_lights: array<Light, 2> = array(
+const scene_lights = array(
     Light(0, vec3(0.4, 2.32, 3.2)), // light 0
     Light(1, vec3(24, 10, 24)), // light 1
 );
-const camera_medium_id: i32 = 0;
+const camera_medium_id = 0;
 
 struct IntersectResult {
     shape_id: i32,
@@ -112,13 +112,8 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
 @fragment
 fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
-    seed = next_seed(seed);
 
-    let dx = seed_to_float(seed);
-    seed = next_seed(seed);
-    let dy = seed_to_float(seed);
-    seed = next_seed(seed);
-    let offset = gaussian_filter(vec2(dx, dy));
+    let offset = gaussian_filter(vec2(rand(&seed), rand(&seed)));
     let remapped_pos = vertex.uv + (vec2(0.5) + offset) / canvas_size;
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
@@ -139,8 +134,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
     let sigma_t = medium.sigma_a + medium.sigma_s;
 
-    let t = -log(1 - seed_to_float(seed)) / sigma_t;
-    seed = next_seed(seed);
+    let t = -log(1 - rand(&seed)) / sigma_t;
 
     if (t >= max_t) {
         if (result.shape_id != -1) {
@@ -165,17 +159,12 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     var c1 = vec3(0.0);
     {
-        let du = seed_to_float(seed);
-        seed = next_seed(seed);
-        let dv = seed_to_float(seed);
-        seed = next_seed(seed);
-        let light_w = seed_to_float(seed);
-        seed = next_seed(seed);
-        let shape_w = seed_to_float(seed);
-        seed = next_seed(seed);
+        let light_uv = vec2(rand(&seed), rand(&seed));
+        let light_w = rand(&seed);
+        let shape_w = rand(&seed);
         let light_id = 1; // TODO: sample light
         let light = scene_lights[light_id];
-        let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, vec2(du, dv));
+        let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
         var g = 0.0;
         let dir_light = normalize(point_on_light.position - vertex_position);
         let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
@@ -222,16 +211,21 @@ fn seed_to_float(seed: u32) -> f32 {
     return f32(seed) * 2.3283064365387e-10;
 }
 
+fn rand(seed: ptr<function, u32>) -> f32 {
+    *seed = next_seed(*seed);
+    return seed_to_float(*seed);
+}
+
 // Filters: default box filter for now
 
-const FILTER_WIDTH: f32 = 1.0;
+const FILTER_WIDTH = 1.0;
 fn box_filter(rand: vec2<f32>) -> vec2<f32> {
     // Warp [0, 1]^2 to [-width/2, width/2]^2
     return (2.0 * rand - 1.0) * (FILTER_WIDTH / 2);
 }
 
 // defaults to 0.5
-const FILTER_STDDEV: f32 = 0.5;
+const FILTER_STDDEV = 0.5;
 fn gaussian_filter(rand: vec2<f32>) -> vec2<f32> {
     let r = FILTER_STDDEV * sqrt(-2 * log(max(rand.x, 1e-8)));
     return vec2(
@@ -242,7 +236,7 @@ fn gaussian_filter(rand: vec2<f32>) -> vec2<f32> {
 
 // Phase functions (HenyeyGreenstein)
 
-const HENYEY_G: f32 = -0.5;
+const HENYEY_G = -0.5;
 
 fn eval_phase_function(dir_in: vec3<f32>, dir_out: vec3<f32>) -> vec3<f32> {
     return vec3(
