@@ -1,7 +1,7 @@
 import { captureError } from './utils'
 import shaderCode from './shader.wgsl'
 import { mat4, vec3 } from 'wgpu-matrix'
-import { Medium, toData } from './scene'
+import { Medium, Scene, toData } from './scene'
 
 const canvas = document.getElementById('canvas')
 if (!(canvas instanceof HTMLCanvasElement)) {
@@ -118,7 +118,7 @@ device.queue.writeBuffer(
 )
 
 const medium: Medium = { sigmaA: 0.1, sigmaS: 0.7 }
-const { media, shapes, lights, cameraMedium } = toData({
+const scene: Scene = {
   media: [medium],
   shapes: [
     {
@@ -131,7 +131,7 @@ const { media, shapes, lights, cameraMedium } = toData({
     },
     {
       center: vec3.fromValues(-3, 0, -1.5),
-      radius: 1,
+      radius: 1.5,
       exterior: medium,
       light: {
         intensity: vec3.fromValues(24, 10, 24)
@@ -139,27 +139,28 @@ const { media, shapes, lights, cameraMedium } = toData({
     }
   ],
   cameraMedium: medium
-})
+}
+const { media, shapes, lights, cameraMedium } = toData(scene)
 
 const mediaBuffer = device.createBuffer({
   size: media.buffer.byteLength,
   usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
 })
-device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
 const shapesBuffer = device.createBuffer({
   size: shapes.buffer.byteLength,
   usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
 })
-device.queue.writeBuffer(shapesBuffer, 0, shapes.buffer)
 const lightsBuffer = device.createBuffer({
   size: lights.buffer.byteLength,
   usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
 })
-device.queue.writeBuffer(lightsBuffer, 0, lights.buffer)
 const cameraMediumBuffer = device.createBuffer({
   size: cameraMedium.buffer.byteLength,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 })
+device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
+device.queue.writeBuffer(shapesBuffer, 0, shapes.buffer)
+device.queue.writeBuffer(lightsBuffer, 0, lights.buffer)
 device.queue.writeBuffer(cameraMediumBuffer, 0, cameraMedium.buffer)
 
 const uniforms = device.createBindGroup({
@@ -205,15 +206,32 @@ do {
   pass.end()
   device.queue.submit([encoder.finish()])
 
-  resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
+  const bruh = resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
     const times = new BigInt64Array(resultBuffer.getMappedRange())
     const gpuTime = times[1] - times[0]
-    console.log('gpu time', gpuTime)
+    // console.log('gpu time', gpuTime)
     resultBuffer.unmap()
   })
 
   const cpuTime = performance.now() - start
-  console.log('cpu time', cpuTime)
+  // console.log('cpu time', cpuTime)
 
-  await Promise.all([check(), new Promise(window.requestAnimationFrame)])
-} while (false)
+  await Promise.all([check(), new Promise(window.requestAnimationFrame), bruh])
+
+  scene.shapes[0].center = vec3.fromValues(
+    0,
+    Math.sin(Date.now() / 1000),
+    Math.cos(Date.now() / 1789) + 1
+  )
+  scene.shapes[1].center = vec3.fromValues(
+    Math.sin(Date.now() / 2837) * 5,
+    0,
+    Math.cos(Date.now() / 2837) * 5
+  )
+
+  const { media, shapes, lights, cameraMedium } = toData(scene)
+  device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
+  device.queue.writeBuffer(shapesBuffer, 0, shapes.buffer)
+  device.queue.writeBuffer(lightsBuffer, 0, lights.buffer)
+  device.queue.writeBuffer(cameraMediumBuffer, 0, cameraMedium.buffer)
+} while (true)
