@@ -102,19 +102,28 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
     return best;
 }
 
+const SAMPLES = 1024;
+
 @fragment
 fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
+    var sum = vec3(0.0);
+    for (var i = 0; i < SAMPLES; i++) {
+        sum += get_color(vertex.uv, &seed) / f32(SAMPLES);
+    }
+    return vec4(sqrt(sum), 1.0);
+}
 
-    let offset = gaussian_filter(vec2(rand(&seed), rand(&seed)));
-    let remapped_pos = vertex.uv + (vec2(0.5) + offset) / canvas_size;
+fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
+    let offset = gaussian_filter(vec2(rand(seed), rand(seed)));
+    let remapped_pos = vertex_uv + (vec2(0.5) + offset) / canvas_size;
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
 
     var radiance = vec3(0.0);
     let current_medium_id = camera_medium_id;
     if (current_medium_id < 0) {
-        return vec4(vec3(0.0), 1.0);
+        return radiance;
     }
 
     let result = intersect_scene(ray);
@@ -126,7 +135,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
     let sigma_t = medium.sigma_a + medium.sigma_s;
 
-    let t = -log(1 - rand(&seed)) / sigma_t;
+    let t = -log(1 - rand(seed)) / sigma_t;
 
     if (t >= max_t) {
         if (result.shape_id != -1) {
@@ -137,7 +146,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
                 radiance += select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(vertex_normal, -ray.dir) <= 0);
             }
         }
-        return vec4(radiance, 1);
+        return radiance;
     }
 
     let vertex_position = ray.origin + t * ray.dir;
@@ -148,9 +157,9 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     var c1 = vec3(0.0);
     {
-        let light_uv = vec2(rand(&seed), rand(&seed));
-        let light_w = rand(&seed);
-        let shape_w = rand(&seed);
+        let light_uv = vec2(rand(seed), rand(seed));
+        let light_w = rand(seed);
+        let shape_w = rand(seed);
         var light_id = 0;
         for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
             if (scene_lights[i].cdf > light_w) {
@@ -181,7 +190,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
     radiance += c1;
     // radiance += vec3(0.5);
-    return vec4(radiance, 1);
+    return radiance;
 }
 
 // PRNG for GPU
