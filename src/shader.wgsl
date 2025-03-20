@@ -1,4 +1,5 @@
 const PI = radians(180.0);
+const INFINITY = 1.0e5;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -53,7 +54,7 @@ const scene_shapes: array<Sphere, scene_shape_count> = array(
     Sphere(0, -1, 0, vec3(0), 1), // shape 0
     Sphere(1, -1, 0, vec3(-3, 0, -1.5), 1), // shape 1
 );
-const scene_light: array<Light, 2> = array(
+const scene_lights: array<Light, 2> = array(
     Light(0, vec3(0.4, 2.32, 3.2)), // light 0
     Light(1, vec3(24, 10, 24)), // light 1
 );
@@ -66,7 +67,7 @@ struct IntersectResult {
 
 /// returns index of shape, or -1 if none
 fn intersect_scene(ray: Ray) -> IntersectResult {
-    var best = IntersectResult(-1, 1.0e5); // infinity not supported
+    var best = IntersectResult(-1, INFINITY); // infinity not supported
     for (var i = 0; i < scene_shape_count; i++) {
         let sphere = scene_shapes[i];
 
@@ -122,31 +123,77 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
     let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
 
+    var radiance = vec3(0.0);
     let current_medium_id = camera_medium_id;
+    if (current_medium_id < 0) {
+        return vec4(vec3(0.0), 1.0);
+    }
 
     let result = intersect_scene(ray);
+    let vertex_position = ray.origin + result.distance * ray.dir;
+
+    let medium = scene_media[current_medium_id];
+    var max_t = INFINITY;
+    if (result.shape_id != -1) {
+        max_t = result.distance;
+    }
+    let sigma_t = medium.sigma_a + medium.sigma_s;
+
+    let t = -log(1 - seed_to_float(seed)) / sigma_t;
+    seed = next_seed(seed);
+
+    if (t >= max_t) {
+        if (result.shape_id != -1) {
+            let shape = scene_shapes[result.shape_id];
+            if (shape.light_id != -1) {
+                let vertex_normal = normalize(vertex_position - shape.center);
+                radiance += select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(vertex_normal, -ray.dir) <= 0);
+            }
+        }
+        return vec4(radiance, 1);
+    }
 
     if (result.shape_id == -1) {
         return vec4(vec3(0), 1);
     }
 
     let shape = scene_shapes[result.shape_id];
-    let vertex_position = ray.origin + result.distance * ray.dir;
-    let vertex_normal = normalize(vertex_position - shape.center);
+    let vertex_interior_medium_id = current_medium_id;
+    let vertex_exterior_medium_id = current_medium_id;
 
-    if (shape.light_id == -1) {
-        return vec4(vec3(0), 1);
-    }
+    let transmittance = exp(-sigma_t * t);
 
-    var transmittance = vec3(1.0);
-    if (current_medium_id >= 0) {
-        let medium = scene_media[current_medium_id];
-        let sigma_t = medium.sigma_a + medium.sigma_s;
-        let t = result.distance;
-        transmittance = vec3(exp(-sigma_t * t));
+    var c1 = vec3(0.0);
+    {
+        let du = seed_to_float(seed);
+        seed = next_seed(seed);
+        let dv = seed_to_float(seed);
+        seed = next_seed(seed);
+        let light_w = seed_to_float(seed);
+        seed = next_seed(seed);
+        let shape_w = seed_to_float(seed);
+        seed = next_seed(seed);
+        let light_id = 1; // TODO: sample light
+        let light = scene_lights[light_id];
+        let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, vec2(du, dv));
+        var g = 0.0;
+        let dir_light = normalize(point_on_light.position - vertex_position);
+        let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
+        if (true) { // TODO: !occluded(scene, shadow_ray)
+            g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
+        }
+        // TODO: p1
+        let p1 = 1.0;
+        if (g > 0 && p1 > 0) {
+            let dir_view = -ray.dir;
+            let f = eval_phase_function(dir_view, dir_light);
+            let l = select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0); // TODO: sus
+            let t = exp(-sigma_t * distance(vertex_position, point_on_light.position));
+            c1 = medium.sigma_s * transmittance * t * g * f * l / p1;
+        }
     }
-    let emission = select(scene_light[shape.light_id].intensity, vec3(0.0), dot(vertex_normal, -ray.dir) <= 0);
-    return vec4(transmittance * emission, 1);
+    radiance += c1;
+    return vec4(radiance, 1);
 }
 
 // PRNG for GPU
@@ -193,9 +240,74 @@ fn gaussian_filter(rand: vec2<f32>) -> vec2<f32> {
     );
 }
 
+// Phase functions (HenyeyGreenstein)
+
+const HENYEY_G: f32 = -0.5;
+
+fn eval_phase_function(dir_in: vec3<f32>, dir_out: vec3<f32>) -> vec3<f32> {
+    return vec3(
+        1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) /
+            pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5)
+    );
+}
+
 // Rays
 
 struct Ray {
     origin: vec3<f32>,
     dir: vec3<f32>,
 };
+
+// Sampling
+
+struct PointAndNormal {
+    position: vec3<f32>,
+    normal: vec3<f32>,
+}
+fn sample_point_on_sphere(
+    sphere: Sphere,
+    ref_point: vec3<f32>,
+    uv: vec2<f32>,
+) -> PointAndNormal {
+    if (distance_squared(ref_point, sphere.center) < sphere.radius * sphere.radius) {
+        let z = 1.0 - 2.0 * uv.x;
+        let r = sqrt(max(0.0, 1.0 - z * z));
+        let phi = 2.0 * PI * uv.y;
+        let offset = vec3(r * cos(phi), r * sin(phi), z);
+        let position = sphere.center + sphere.radius * offset;
+        let normal = offset;
+        return PointAndNormal(position, normal);
+    }
+
+    let dir_to_center = normalize(sphere.center - ref_point);
+
+    let sin_elevation_max_sq = sphere.radius * sphere.radius / distance_squared(ref_point, sphere.center);
+    let cos_elevation_max = sqrt(max(0.0, 1.0 - sin_elevation_max_sq));
+    let cos_elevation = (1.0 - uv.x) + uv.x * cos_elevation_max;
+    let sin_elevation = sqrt(max(0.0, 1.0 - cos_elevation * cos_elevation));
+    let azimuth = uv.y * 2 * PI;
+
+    let dc = distance(ref_point, sphere.center);
+    let ds = dc * cos_elevation - sqrt(max(0.0, sphere.radius * sphere.radius - dc * dc * sin_elevation * sin_elevation));
+    let cos_alpha = (dc * dc + sphere.radius * sphere.radius - ds * ds) / (2 * dc * sphere.radius);
+    let sin_alpha = sqrt(max(0.0, 1.0 - cos_alpha * cos_alpha));
+    let n_on_sphere = -to_world_frame(dir_to_center, vec3(sin_alpha * cos(azimuth), sin_alpha * sin(azimuth), cos_alpha));
+    let p_on_sphere = sphere.radius * n_on_sphere + sphere.center;
+    return PointAndNormal(p_on_sphere, n_on_sphere);
+}
+
+fn to_world_frame(n: vec3<f32>, v: vec3<f32>) -> vec3<f32> {
+    let a = 1 / (1 + n.z);
+    let b = -n.x * n.y * a;
+    let x = select(
+        vec3(1 - n.x * n.x * a, b, -n.x),
+        vec3(0, -1, 0),
+        n.z < -1 + 1e-6,
+    );
+    return x * v;
+}
+
+fn distance_squared(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    let diff = a - b;
+    return dot(diff, diff);
+}
