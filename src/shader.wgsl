@@ -124,6 +124,8 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let shape = scene_shapes[result.shape_id];
+    let vertex_position = ray.origin + result.distance * ray.dir;
+    let vertex_normal = normalize(vertex_position - shape.center);
 
     if (shape.light_id == -1) {
         return vec4(vec3(0), 1);
@@ -134,9 +136,10 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         let medium = scene_media[current_medium_id];
         let sigma_t = medium.sigma_a + medium.sigma_s;
         let t = result.distance;
-        transmittance *= exp(-sigma_t * t);
+        transmittance = vec3(exp(-sigma_t * t));
     }
-    return vec4(transmittance * scene_light[shape.light_id].intensity, 1);
+    let emission = select(scene_light[shape.light_id].intensity, vec3(0.0), dot(vertex_normal, -ray.dir) <= 0);
+    return vec4(transmittance * emission, 1);
 }
 
 // PRNG for GPU
