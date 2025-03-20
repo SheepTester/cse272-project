@@ -26,8 +26,8 @@ fn vertex_main(
 
 struct Medium {
     // homogeneous mediums for now
-    sigma_s: f32,
     sigma_a: f32,
+    sigma_s: f32,
 }
 
 struct Sphere {
@@ -47,9 +47,16 @@ struct Light {
 }
 
 // volpath_test1
-const scene_media: array<Medium, 1> = array(Medium(0.5 * 3, 0 * 3));
-const scene_shapes: array<Sphere, 1> = array(Sphere(0, -1, 0, vec3(0), 1));
-const scene_light: array<Light, 1> = array(Light(0, vec3(0.4, 2.32, 3.2)));
+const scene_media: array<Medium, 1> = array(Medium(0.1 * 1, 0.7 * 1));
+const scene_shape_count: i32 = 2;
+const scene_shapes: array<Sphere, scene_shape_count> = array(
+    Sphere(0, -1, 0, vec3(0), 1), // shape 0
+    Sphere(1, -1, 0, vec3(-3, 0, -1.5), 1), // shape 1
+);
+const scene_light: array<Light, 2> = array(
+    Light(0, vec3(0.4, 2.32, 3.2)), // light 0
+    Light(1, vec3(24, 10, 24)), // light 1
+);
 const camera_medium_id: i32 = 0;
 
 struct IntersectResult {
@@ -60,7 +67,7 @@ struct IntersectResult {
 /// returns index of shape, or -1 if none
 fn intersect_scene(ray: Ray) -> IntersectResult {
     var best = IntersectResult(-1, 1.0e5); // infinity not supported
-    for (var i = 0; i < 1; i++) {
+    for (var i = 0; i < scene_shape_count; i++) {
         let sphere = scene_shapes[i];
 
         // thanks ChatGPT
