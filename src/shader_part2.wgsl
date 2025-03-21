@@ -13,6 +13,7 @@ struct VertexOutput {
 @group(0) @binding(4) var<storage, read> scene_shapes: array<Sphere>;
 @group(0) @binding(5) var<storage, read> scene_lights: array<Light>;
 @group(0) @binding(6) var<uniform> camera_medium_id: i32;
+@group(0) @binding(7) var<uniform> max_depth: i32;
 
 @vertex
 fn vertex_main(
@@ -36,14 +37,13 @@ struct Medium {
 }
 
 struct Sphere {
-    // material_id: i32,
+    material_id: i32,
     light_id: i32,
     interior_medium_id: i32,
     exterior_medium_id: i32,
 
-    radius: f32,
-    // vec3 has 4-byte alignment
     center: vec3<f32>,
+    radius: f32,
 }
 
 struct Light {
@@ -108,7 +108,7 @@ const SAMPLES = 1024;
 fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
     var sum = vec3(0.0);
-    for (var i = 0; i < SAMPLES; i++) {
+    for (var i = max_depth - max_depth; i < SAMPLES; i++) {
         sum += get_color(vertex.uv, &seed) / f32(SAMPLES);
     }
     return vec4(sqrt(sum), 1.0);

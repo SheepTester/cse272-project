@@ -102,7 +102,7 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
     return best;
 }
 
-const SAMPLES = 1024;
+const SAMPLES = 1024 / 2;
 const RR_DEPTH = 5;
 
 @fragment

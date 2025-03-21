@@ -346,4 +346,4 @@ do {
   mat4.rotateY(cameraTransform, camera.ry, cameraTransform)
   mat4.rotateX(cameraTransform, camera.rx, cameraTransform)
   device.queue.writeBuffer(camToWorld, 0, cameraTransform)
-} while (false)
+} while (true)
