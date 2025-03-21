@@ -83,7 +83,7 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
 
         if t_near > 0.0 {
             // Closest valid intersection
-            if (t_near >= ray.near && t_near < best.distance) {
+            if t_near >= ray.near && t_near < best.distance {
                 best.shape_id = i;
                 best.distance = t_near;
             }
@@ -91,7 +91,7 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
         }
         if t_far > 0.0 {
             // Ray starts inside the sphere
-            if (t_far >= ray.near && t_far < best.distance) {
+            if t_far >= ray.near && t_far < best.distance {
                 best.shape_id = i;
                 best.distance = t_far;
             }
@@ -130,7 +130,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         var vertex_geometric_normal = vec3(0.0);
         var vertex_interior_medium_id = -1;
         var vertex_exterior_medium_id = -1;
-        if (surface_result.shape_id != -1) {
+        if surface_result.shape_id != -1 {
             let shape = scene_shapes[surface_result.shape_id];
             vertex_position = ray.origin + surface_result.distance * ray.dir;
             vertex_geometric_normal = normalize(vertex_position - shape.center);
@@ -140,16 +140,16 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
 
         var transmittance = vec3(1.0);
         var trans_pdf = 1.0;
-        if (current_medium_id >= 0) {
+        if current_medium_id >= 0 {
             let medium = scene_media[current_medium_id];
             var max_t = INFINITY;
-            if (surface_result.shape_id != -1) {
+            if surface_result.shape_id != -1 {
                 max_t = surface_result.distance;
             }
             let sigma_t = medium.sigma_a + medium.sigma_s;
 
             let t = -log(1 - rand(seed)) / sigma_t;
-            if (t < max_t) {
+            if t < max_t {
                 scatter = true;
 
                 vertex_position = ray.origin + t * ray.dir;
@@ -159,7 +159,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                 transmittance = vec3(exp(-sigma_t * t));
                 trans_pdf = exp(-sigma_t * t) * sigma_t;
             } else {
-                if (surface_result.shape_id == -1) {
+                if surface_result.shape_id == -1 {
                     vertex_position = ray.origin + max_t * ray.dir;
                     vertex_interior_medium_id = current_medium_id;
                     vertex_exterior_medium_id = current_medium_id;
@@ -171,22 +171,22 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
 
         current_path_throughput *= (transmittance / trans_pdf);
 
-        if (!scatter) {
-            if (surface_result.shape_id != -1) {
+        if !scatter {
+            if surface_result.shape_id != -1 {
                 let shape = scene_shapes[surface_result.shape_id];
-                if (shape.light_id != -1) {
+                if shape.light_id != -1 {
                     radiance += select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(vertex_geometric_normal, -ray.dir) <= 0);
                 }
             }
         }
 
-        if (MAX_DEPTH != -1 && bounces == MAX_DEPTH - 1) {
+        if MAX_DEPTH != -1 && bounces == MAX_DEPTH - 1 {
             break;
         }
 
-        if (!scatter) {
-            if (surface_result.shape_id != -1) {
-                if (scene_shapes[surface_result.shape_id].material_id == -1) {
+        if !scatter {
+            if surface_result.shape_id != -1 {
+                if scene_shapes[surface_result.shape_id].material_id == -1 {
                     ray = Ray(vertex_position, ray.dir, 0.01);
                     current_medium_id = update_medium_id(
                         current_medium_id,
@@ -200,7 +200,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             }
         }
 
-        if (!scatter) {
+        if !scatter {
             break;
         }
         let medium = scene_media[current_medium_id];
@@ -211,9 +211,9 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         let p2 = pdf_sample_phase(dir_view, next_dir);
         current_path_throughput *= medium.sigma_s * (f / p2);
 
-        if (bounces >= RR_DEPTH) {
+        if bounces >= RR_DEPTH {
             let rr_prob = min(max(current_path_throughput.x, max(current_path_throughput.y, current_path_throughput.z)), 0.95);
-            if (rand(seed) > rr_prob) {
+            if rand(seed) > rr_prob {
                 break;
             }
             current_path_throughput /= rr_prob;
@@ -235,7 +235,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         //     let shape_w = rand(seed);
         //     var light_id = 0;
         //     for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
-        //         if (scene_lights[i].cdf > light_w) {
+        //         if scene_lights[i].cdf > light_w {
         //             light_id = i;
         //             break;
         //         }
@@ -247,12 +247,12 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         //     var g = 0.0;
         //     let dir_light = normalize(point_on_light.position - vertex_position);
         //     let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
-        //     if (true) { // TODO: !occluded(scene, shadow_ray)
+        //     if true { // TODO: !occluded(scene, shadow_ray)
         //         g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
         //     }
         //     let p1 = (light.cdf - select(0, scene_lights[max(0, light_id - 1)].cdf, light_id > 0)) *
         //         pdf_point_on_sphere(scene_shapes[light.shape_id], point_on_light, vertex_position);
-        //     if (g > 0 && p1 > 0) {
+        //     if g > 0 && p1 > 0 {
         //         let dir_view = -ray.dir;
         //         let f = eval_phase_function(dir_view, dir_light);
         //         let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
@@ -272,8 +272,8 @@ fn update_medium_id(
     vertex_geometric_normal: vec3<f32>,
     ray_dir: vec3<f32>,
 ) -> i32 {
-    if (vertex_interior_medium_id != vertex_exterior_medium_id) {
-        if (dot(ray_dir, vertex_geometric_normal) > 0) {
+    if vertex_interior_medium_id != vertex_exterior_medium_id {
+        if dot(ray_dir, vertex_geometric_normal) > 0 {
             return vertex_exterior_medium_id;
         } else {
             return vertex_interior_medium_id;
@@ -337,7 +337,7 @@ const USE_HG = true;
 const HENYEY_G = -0.5;
 
 fn eval_phase_function(dir_in: vec3<f32>, dir_out: vec3<f32>) -> vec3<f32> {
-    if (USE_HG) {
+    if USE_HG {
         return vec3(
             1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) /
                 pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5)
@@ -348,8 +348,8 @@ fn eval_phase_function(dir_in: vec3<f32>, dir_out: vec3<f32>) -> vec3<f32> {
 }
 
 fn sample_phase_function(dir_in: vec3<f32>, rnd_param: vec2<f32>) -> vec3<f32> {
-    if (USE_HG) {
-        if (HENYEY_G < 1.0e-3) {
+    if USE_HG {
+        if HENYEY_G < 1.0e-3 {
             let z = 1 - 2 * rnd_param.x;
             let r = sqrt(max(0.0, 1 - z * z));
             let phi = 2 * PI * rnd_param.y;
@@ -370,7 +370,7 @@ fn sample_phase_function(dir_in: vec3<f32>, rnd_param: vec2<f32>) -> vec3<f32> {
 }
 
 fn pdf_sample_phase(dir_in: vec3<f32>, dir_out: vec3<f32>) -> f32 {
-    if (USE_HG) {
+    if USE_HG {
         return 1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) / pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5);
     } else {
         return 1 / (4 * PI);
@@ -396,7 +396,7 @@ fn sample_point_on_sphere(
     ref_point: vec3<f32>,
     uv: vec2<f32>,
 ) -> PointAndNormal {
-    if (distance_squared(ref_point, sphere.center) < sphere.radius * sphere.radius) {
+    if distance_squared(ref_point, sphere.center) < sphere.radius * sphere.radius {
         let z = 1.0 - 2.0 * uv.x;
         let r = sqrt(max(0.0, 1.0 - z * z));
         let phi = 2.0 * PI * uv.y;
@@ -445,7 +445,7 @@ fn distance_squared(a: vec3<f32>, b: vec3<f32>) -> f32 {
 }
 
 fn pdf_point_on_sphere(sphere: Sphere, point_on_shape: PointAndNormal, ref_point: vec3<f32>) -> f32 {
-    if (distance_squared(ref_point, sphere.center) < sphere.radius * sphere.radius) {
+    if distance_squared(ref_point, sphere.center) < sphere.radius * sphere.radius {
         return 1 / (4 * PI * sphere.radius * sphere.radius);
     }
     let sin_elevation_max_sq = sphere.radius * sphere.radius / distance_squared(ref_point, sphere.center);
