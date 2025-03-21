@@ -1,9 +1,6 @@
 # cse272-project
 
-<img src="./docs/report/part1.png" alt="Scene 1" width="24%" />
-<img src="./docs/report/part2.png" alt="Scene 2" width="24%" />
-<img src="./docs/report/part3.png" alt="Scene 3" width="24%" />
-<img src="./docs/report/127.0.0.1_8000_.png" alt="Scene 4 (broken)" width="24%" />
+<img src="./docs/report/part1.png" alt="Scene 1" width="25%" /><img src="./docs/report/part2.png" alt="Scene 2" width="25%" /><img src="./docs/report/part3.png" alt="Scene 3" width="25%" /><img src="./docs/report/127.0.0.1_8000_.png" alt="Scene 4 (broken)" width="25%" />
 
 WebGPU volumetric renderer for CSE 272.
 
@@ -14,7 +11,7 @@ Click on the canvas to lock your pointer, then use Minecraft controls to move ar
 - WASD to move
 - Space and shift to fly up/down
 
-<video src="./docs/video.mp4" width="512" height="512" controls></video>
+https://github.com/user-attachments/assets/adc1825e-f848-4c5f-964b-5a713f2a5ea1
 
 ## Development
 
