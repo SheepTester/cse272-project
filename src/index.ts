@@ -322,60 +322,32 @@ do {
   device.queue.writeBuffer(cameraMediumBuffer, 0, cameraMedium.buffer)
 
   /** 1/s */
-  const DRAG_CONST = 0.5
-  /** units / s^2 */
-  const ACCEL_CONST = 10
+  const DRAG_CONST = 2
+  /** world units / s */
+  const MOVE_CONST = 0.5
   const t = Math.min((performance.now() - start) / 1000, 0.1)
-  const acceleration = {
-    x: -camera.xv * DRAG_CONST,
-    y: -camera.yv * DRAG_CONST,
-    z: -camera.zv * DRAG_CONST
-  }
-  if (keys.left) acceleration.x = -ACCEL_CONST
-  if (keys.right) acceleration.x = ACCEL_CONST
-  if (keys.down) acceleration.y = -ACCEL_CONST
-  if (keys.up) acceleration.y = ACCEL_CONST
-  if (keys.backward) acceleration.z = -ACCEL_CONST
-  if (keys.forward) acceleration.z = ACCEL_CONST
-  ;[acceleration.x, acceleration.z] = [
-    acceleration.x * Math.cos(camera.ry) - acceleration.z * Math.sin(camera.ry),
-    acceleration.x * Math.sin(camera.ry) + acceleration.z * Math.cos(camera.ry)
-  ]
-  camera.x += t * camera.xv + 0.5 * acceleration.x * t * t
-  camera.y += t * camera.yv + 0.5 * acceleration.y * t * t
-  camera.z += t * camera.zv + 0.5 * acceleration.z * t * t
-  const newVelocity = {
-    x: camera.xv + acceleration.x * t,
-    y: camera.yv + acceleration.y * t,
-    z: camera.zv + acceleration.z * t
-  }
-  if (
-    keys.left ||
-    keys.right ||
-    Math.sign(camera.xv) === Math.sign(newVelocity.x)
-  ) {
-    camera.xv = newVelocity.x
-  } else {
-    camera.xv = 0
-  }
-  if (
-    keys.down ||
-    keys.up ||
-    Math.sign(camera.yv) === Math.sign(newVelocity.y)
-  ) {
-    camera.yv = newVelocity.y
-  } else {
-    camera.yv = 0
-  }
-  if (
-    keys.backward ||
-    keys.forward ||
-    Math.sign(camera.zv) === Math.sign(newVelocity.z)
-  ) {
-    camera.zv = newVelocity.z
-  } else {
-    camera.zv = 0
-  }
+  const newVelocity = { x: 0, y: 0, z: 0 }
+  // vel += -drag * vel * time
+  // vel = vel - drag * time * vel = (1 - drag * time) * vel
+  newVelocity.x = Math.max(1 - DRAG_CONST * t, 0) * camera.xv
+  newVelocity.y = Math.max(1 - DRAG_CONST * t, 0) * camera.yv
+  newVelocity.z = Math.max(1 - DRAG_CONST * t, 0) * camera.zv
+  let moveX = 0
+  let moveZ = 0
+  if (keys.left) moveX += MOVE_CONST
+  if (keys.right) moveX += -MOVE_CONST
+  if (keys.down) newVelocity.y += -MOVE_CONST
+  if (keys.up) newVelocity.y += MOVE_CONST
+  if (keys.backward) moveZ += -MOVE_CONST
+  if (keys.forward) moveZ += MOVE_CONST
+  newVelocity.x += moveX * Math.cos(-camera.ry) - moveZ * Math.sin(-camera.ry)
+  newVelocity.z += moveX * Math.sin(-camera.ry) + moveZ * Math.cos(-camera.ry)
+  camera.x += t * ((camera.xv + newVelocity.x) / 2)
+  camera.y += t * ((camera.yv + newVelocity.y) / 2)
+  camera.z += t * ((camera.zv + newVelocity.z) / 2)
+  camera.xv = newVelocity.x
+  camera.yv = newVelocity.y
+  camera.zv = newVelocity.z
 
   const cameraTransform = mat4.identity()
   mat4.translate(
