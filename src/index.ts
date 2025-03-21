@@ -119,7 +119,7 @@ const camToWorld = device.createBuffer({
 device.queue.writeBuffer(
   camToWorld,
   0,
-  mat4.aim([0, 0, -3], [0, 0, 0], [0, 1, 0], mat4.create())
+  mat4.aim([0, 0, -4], [0, 0, 0], [0, 1, 0], mat4.create())
 )
 
 const { media, shapes, lights, cameraMedium } = toData(scene)
@@ -340,4 +340,4 @@ do {
   mat4.rotateY(cameraTransform, camera.ry, cameraTransform)
   mat4.rotateX(cameraTransform, camera.rx, cameraTransform)
   device.queue.writeBuffer(camToWorld, 0, cameraTransform)
-} while (true)
+} while (false)

@@ -83,7 +83,7 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
 
         if t_near > 0.0 {
             // Closest valid intersection
-            if (t_near < best.distance) {
+            if (t_near >= ray.near && t_near < best.distance) {
                 best.shape_id = i;
                 best.distance = t_near;
             }
@@ -91,7 +91,7 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
         }
         if t_far > 0.0 {
             // Ray starts inside the sphere
-            if (t_far < best.distance) {
+            if (t_far >= ray.near && t_far < best.distance) {
                 best.shape_id = i;
                 best.distance = t_far;
             }
@@ -119,7 +119,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
     let offset = gaussian_filter(vec2(rand(seed), rand(seed)));
     let remapped_pos = vertex_uv + (vec2(0.5) + offset) / canvas_size;
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
-    var ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
+    var ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz, 0);
     var current_medium_id = camera_medium_id;
     var radiance = vec3(0.0);
     var current_path_throughput = vec3(1.0);
@@ -140,7 +140,6 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
 
         var transmittance = vec3(1.0);
         var trans_pdf = 1.0;
-
         if (current_medium_id >= 0) {
             let medium = scene_media[current_medium_id];
             var max_t = INFINITY;
@@ -157,7 +156,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                 vertex_interior_medium_id = current_medium_id;
                 vertex_exterior_medium_id = current_medium_id;
 
-                transmittance = -sigma_t * vec3(t);
+                transmittance = vec3(exp(-sigma_t * t));
                 trans_pdf = exp(-sigma_t * t) * sigma_t;
             } else {
                 if (surface_result.shape_id == -1) {
@@ -165,7 +164,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                     vertex_interior_medium_id = current_medium_id;
                     vertex_exterior_medium_id = current_medium_id;
                 }
-                transmittance = -sigma_t * vec3(max_t);
+                transmittance = vec3(exp(-sigma_t * max_t));
                 trans_pdf = exp(-sigma_t * max_t) * sigma_t;
             }
         }
@@ -188,7 +187,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         if (!scatter) {
             if (surface_result.shape_id != -1) {
                 if (scene_shapes[surface_result.shape_id].material_id == -1) {
-                    ray = Ray(vertex_position, ray.dir);
+                    ray = Ray(vertex_position, ray.dir, 0.01);
                     current_medium_id = update_medium_id(
                         current_medium_id,
                         vertex_interior_medium_id,
@@ -220,7 +219,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             current_path_throughput /= rr_prob;
         }
 
-        ray = Ray(vertex_position, next_dir);
+        ray = Ray(vertex_position, next_dir, 0.01);
         current_medium_id = update_medium_id(
             current_medium_id,
             vertex_interior_medium_id,
@@ -334,32 +333,48 @@ fn gaussian_filter(rand: vec2<f32>) -> vec2<f32> {
 
 // Phase functions (HenyeyGreenstein)
 
+const USE_HG = true;
 const HENYEY_G = -0.5;
 
 fn eval_phase_function(dir_in: vec3<f32>, dir_out: vec3<f32>) -> vec3<f32> {
-    return vec3(
-        1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) /
-            pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5)
-    );
+    if (USE_HG) {
+        return vec3(
+            1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) /
+                pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5)
+        );
+    } else {
+        return vec3(1 / (4 * PI));
+    }
 }
 
 fn sample_phase_function(dir_in: vec3<f32>, rnd_param: vec2<f32>) -> vec3<f32> {
-    if (HENYEY_G < 1.0e-3) {
+    if (USE_HG) {
+        if (HENYEY_G < 1.0e-3) {
+            let z = 1 - 2 * rnd_param.x;
+            let r = sqrt(max(0.0, 1 - z * z));
+            let phi = 2 * PI * rnd_param.y;
+            return vec3(r * cos(phi), r * sin(phi), z);
+        } else {
+            let tmp = (HENYEY_G * HENYEY_G - 1) / (2 * rnd_param.x * HENYEY_G - (HENYEY_G + 1));
+            let cos_elevation = (tmp * tmp - (1 + HENYEY_G * HENYEY_G)) / (2 * HENYEY_G);
+            let sin_elevation = sqrt(max(1 - cos_elevation * cos_elevation, 0.0));
+            let azimuth = 2 * PI * rnd_param.y;
+            return to_world_frame(dir_in, vec3(sin_elevation * cos(azimuth), sin_elevation * sin(azimuth), cos_elevation));
+        }
+    } else {
         let z = 1 - 2 * rnd_param.x;
         let r = sqrt(max(0.0, 1 - z * z));
         let phi = 2 * PI * rnd_param.y;
         return vec3(r * cos(phi), r * sin(phi), z);
-    } else {
-        let tmp = (HENYEY_G * HENYEY_G - 1) / (2 * rnd_param.x * HENYEY_G - (HENYEY_G + 1));
-        let cos_elevation = (tmp * tmp - (1 + HENYEY_G * HENYEY_G)) / (2 * HENYEY_G);
-        let sin_elevation = sqrt(max(1 - cos_elevation * cos_elevation, 0.0));
-        let azimuth = 2 * PI * rnd_param.y;
-        return to_world_frame(dir_in, vec3(sin_elevation * cos(azimuth), sin_elevation * sin(azimuth), cos_elevation));
     }
 }
 
 fn pdf_sample_phase(dir_in: vec3<f32>, dir_out: vec3<f32>) -> f32 {
-    return 1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) / pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5);
+    if (USE_HG) {
+        return 1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) / pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5);
+    } else {
+        return 1 / (4 * PI);
+    }
 }
 
 // Rays
@@ -367,6 +382,7 @@ fn pdf_sample_phase(dir_in: vec3<f32>, dir_out: vec3<f32>) -> f32 {
 struct Ray {
     origin: vec3<f32>,
     dir: vec3<f32>,
+    near: f32,
 };
 
 // Sampling
