@@ -2,7 +2,7 @@ import { captureError } from './utils'
 import shaderCode from './shader.wgsl'
 import { mat4 } from 'wgpu-matrix'
 import { toData } from './scene'
-import { scene } from './scenes/volpath-test3'
+import { scene } from './scenes/volpath-test4'
 
 if (!navigator.gpu) {
   alert('Your browser doesnt support WebGPU, or it is not enabled.')

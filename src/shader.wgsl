@@ -1,5 +1,6 @@
 const PI = radians(180.0);
 const INFINITY = 1.0e5;
+const NEAR = 0.01;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -126,7 +127,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
     var dir_pdf = 0.0;
     var nee_p_cache = vec3(0.0);
     var multi_trans_pdf = 1.0;
-    let never_scatter = true;
+    var never_scatter = true;
     for (var bounces = 0; max_depth == -1 || bounces < max_depth; bounces++) {
         let surface_result = intersect_scene(ray);
         var scatter = false;
@@ -155,6 +156,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             let t = -log(1 - rand(seed)) / sigma_t;
             if t < max_t {
                 scatter = true;
+                never_scatter = false;
 
                 vertex_position = ray.origin + t * ray.dir;
                 vertex_interior_medium_id = current_medium_id;
@@ -208,7 +210,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         if !scatter {
             if surface_result.shape_id != -1 {
                 if scene_shapes[surface_result.shape_id].material_id == -1 {
-                    ray = Ray(vertex_position, ray.dir, 0.01);
+                    ray = Ray(vertex_position, ray.dir, NEAR);
                     current_medium_id = update_medium_id(
                         current_medium_id,
                         vertex_interior_medium_id,
@@ -242,11 +244,10 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             var t_light = vec3(1.0);
             var p = vertex_position;
             var shadow_medium_id = current_medium_id;
-            var shadow_bounces = 0;
             var p_trans_dir = 1.0;
-            while true {
+            for (var shadow_bounces = 0; max_depth != -1 && bounces + shadow_bounces + 1 < max_depth; shadow_bounces++) {
                 let dir_light = normalize(point_on_light.position - p);
-                let shadow_ray = Ray(p, dir_light, 0.1);
+                let shadow_ray = Ray(p, dir_light, NEAR);
                 let far = distance(point_on_light.position, p) * (1.0 - shadow_ray.near);
                 let shadow_result = intersect_scene(shadow_ray);
                 var next_t = far;
@@ -297,6 +298,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                     f = eval_phase_function(dir_view, dir_light);
                 } else {
                     // TODO: eval material (no.)
+                    f = vec3(1.0, 0.0, 0.0);
                 }
                 var sigma_s = vec3(1.0);
                 if scatter {
@@ -314,7 +316,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                 w1 = (p1 * p1) / (p1 * p1 + p2 * p2);
             }
         }
-        radiance += c1 * w1;
+        radiance += max(c1 * w1, vec3(0.0));
 
         if !scatter {
             break;
@@ -336,7 +338,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             current_path_throughput /= rr_prob;
         }
 
-        ray = Ray(vertex_position, next_dir, 0.01);
+        ray = Ray(vertex_position, next_dir, NEAR);
         current_medium_id = update_medium_id(
             current_medium_id,
             vertex_interior_medium_id,
@@ -345,6 +347,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             ray.dir
         );
     }
+    // radiance += vec3(0.5);
     return radiance;
 }
 
