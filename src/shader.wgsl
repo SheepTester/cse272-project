@@ -151,7 +151,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             if surface_result.shape_id != -1 {
                 max_t = surface_result.distance;
             }
-            let sigma_t = medium.sigma_a + medium.sigma_s;
+            let sigma_t = medium.sigma_s + medium.sigma_a;
 
             let t = -log(1 - rand(seed)) / sigma_t;
             if t < max_t {
@@ -171,7 +171,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                     vertex_exterior_medium_id = current_medium_id;
                 }
                 transmittance = vec3(exp(-sigma_t * max_t));
-                trans_pdf = exp(-sigma_t * max_t) * sigma_t;
+                trans_pdf = exp(-sigma_t * max_t);
             }
         }
         multi_trans_pdf *= trans_pdf;
@@ -244,8 +244,9 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             var t_light = vec3(1.0);
             var p = vertex_position;
             var shadow_medium_id = current_medium_id;
+            var shadow_bounces = 0;
             var p_trans_dir = 1.0;
-            for (var shadow_bounces = 0; max_depth != -1 && bounces + shadow_bounces + 1 < max_depth; shadow_bounces++) {
+            loop {
                 let dir_light = normalize(point_on_light.position - p);
                 let shadow_ray = Ray(p, dir_light, NEAR);
                 let far = distance(point_on_light.position, p) * (1.0 - shadow_ray.near);
@@ -306,17 +307,17 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                     sigma_s = vec3(medium.sigma_s);
                 }
                 let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
-                c1 = vd(current_path_throughput) * vd(sigma_s) * vd(t_light) * id(g) * vd(f) * vd(l) / id(p1);
+                c1 = current_path_throughput * sigma_s * t_light * g * f * l / p1;
                 var p2 = 0.0;
                 if scatter {
                     let medium = scene_media[current_medium_id];
                     p2 = pdf_sample_phase(dir_view, dir_light) * g;
                 }
                 p2 *= p_trans_dir;
-                w1 = (id(p1) * id(p1)) / (id(p1) * id(p1) + id(p2) * id(p2));
+                w1 = (p1 * p1) / (p1 * p1 + p2 * p2);
             }
         }
-        radiance += vd(c1) * id(w1); // max(c1, vec3(0.0)) * max(w1, 0.0); // max(c1 * w1, vec3(0.0));
+        radiance += c1 * w1; // max(c1, vec3(0.0)) * max(w1, 0.0); // max(c1 * w1, vec3(0.0));
 
         if !scatter {
             break;
@@ -377,15 +378,15 @@ fn seed_per_thread(id: u32) -> u32 {
 }
 
 fn tau_step(z: u32, s1: u32, s2: u32, s3: u32, m: u32) -> u32 {
-    let b = (((z << s1) ^ z) >> s2);
-    return (((z & m) << s3) ^ b);
+    let b = ((z << s1) ^ z) >> s2;
+    return ((z & m) << s3) ^ b;
 }
 
 fn next_seed(seed: u32) -> u32 {
-    let z1= tau_step(seed, 13, 19, 12, 429496729);
-    let z2= tau_step(seed, 2, 25, 4, 4294967288);
-    let z3= tau_step(seed, 3, 11, 17, 429496280);
-    let z4= 1664525 * seed + 1013904223;
+    let z1 = tau_step(seed, 13, 19, 12, 429496729);
+    let z2 = tau_step(seed, 2, 25, 4, 4294967288);
+    let z3 = tau_step(seed, 3, 11, 17, 429496280);
+    let z4 = 1664525 * seed + 1013904223;
     return z1 ^ z2 ^ z3 ^ z4;
 }
 
@@ -410,7 +411,7 @@ fn box_filter(rand: vec2<f32>) -> vec2<f32> {
 // defaults to 0.5
 const FILTER_STDDEV = 0.5;
 fn gaussian_filter(rand: vec2<f32>) -> vec2<f32> {
-    let r = FILTER_STDDEV * sqrt(-2 * log(max(rand.x, 1e-8)));
+    let r = FILTER_STDDEV * sqrt(-2 * log(max(rand.x, 1.0e-8)));
     return vec2(
         r * cos(2 * PI * rand.y),
         r * sin(2 * PI * rand.y),
