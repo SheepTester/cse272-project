@@ -103,6 +103,8 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
 }
 
 const SAMPLES = 1024;
+const MAX_DEPTH = 6;
+const RR_DEPTH = 5;
 
 @fragment
 fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
@@ -118,72 +120,167 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
     let offset = gaussian_filter(vec2(rand(seed), rand(seed)));
     let remapped_pos = vertex_uv + (vec2(0.5) + offset) / canvas_size;
     let dir = normalize(sample_to_cam * vec4(remapped_pos, 0.0, 1.0)).xyz;
-    let ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
-    let current_medium_id = camera_medium_id;
+    var ray = Ray((cam_to_world * vec4(vec3(0.0), 1.0)).xyz, normalize(cam_to_world * vec4(dir, 0.0)).xyz);
+    var current_medium_id = camera_medium_id;
     var radiance = vec3(0.0);
-    let result = intersect_scene(ray);
-    if (current_medium_id >= 0) {
-        let medium = scene_media[current_medium_id];
-        var max_t = INFINITY;
-        if (result.shape_id != -1) {
-            max_t = result.distance;
+    var current_path_throughput = vec3(1.0);
+    for (var bounces = 0; MAX_DEPTH == -1 || bounces < MAX_DEPTH; bounces++) {
+        let surface_result = intersect_scene(ray);
+        var scatter = false;
+        var vertex_position = vec3(0.0);
+        var vertex_geometric_normal = vec3(0.0);
+        var vertex_interior_medium_id = -1;
+        var vertex_exterior_medium_id = -1;
+        if (surface_result.shape_id != -1) {
+            let shape = scene_shapes[surface_result.shape_id];
+            vertex_position = ray.origin + surface_result.distance * ray.dir;
+            vertex_geometric_normal = normalize(vertex_position - shape.center);
+            vertex_interior_medium_id = shape.interior_medium_id;
+            vertex_exterior_medium_id = shape.exterior_medium_id;
         }
-        let sigma_t = medium.sigma_a + medium.sigma_s;
 
-        let t = -log(1 - rand(seed)) / sigma_t;
-        if (t < max_t) {
-            let vertex_position = ray.origin + t * ray.dir;
-            let vertex_interior_medium_id = current_medium_id;
-            let vertex_exterior_medium_id = current_medium_id;
+        var transmittance = vec3(1.0);
+        var trans_pdf = 1.0;
 
-            let transmittance = 1 / sigma_t;
-
-            var c1 = vec3(0.0);
-            {
-                let light_uv = vec2(rand(seed), rand(seed));
-                let light_w = rand(seed);
-                let shape_w = rand(seed);
-                var light_id = 0;
-                for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
-                    if (scene_lights[i].cdf > light_w) {
-                        light_id = i;
-                        break;
-                    }
-                }
-                // return vec4(1.0, 0.0, f32(light_id), 1.0);
-                let light = scene_lights[light_id];
-                let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
-                // return vec4(point_on_light.normal * 0.5 + 0.5, 1);
-                var g = 0.0;
-                let dir_light = normalize(point_on_light.position - vertex_position);
-                let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
-                if (true) { // TODO: !occluded(scene, shadow_ray)
-                    g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
-                }
-                let p1 = (light.cdf - select(0, scene_lights[max(0, light_id - 1)].cdf, light_id > 0)) *
-                    pdf_point_on_sphere(scene_shapes[light.shape_id], point_on_light, vertex_position);
-                if (g > 0 && p1 > 0) {
-                    let dir_view = -ray.dir;
-                    let f = eval_phase_function(dir_view, dir_light);
-                    let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
-                    let t = exp(-sigma_t * distance(vertex_position, point_on_light.position));
-                    c1 = medium.sigma_s * transmittance * t * g * f * l / p1;
-                }
-                // else { c1 = vec3(1.0, 0.0, 0); }
+        if (current_medium_id >= 0) {
+            let medium = scene_media[current_medium_id];
+            var max_t = INFINITY;
+            if (surface_result.shape_id != -1) {
+                max_t = surface_result.distance;
             }
-            radiance += c1;
-        } else {
-            if (result.shape_id != -1) {
-                let vertex_position = ray.origin + result.distance * ray.dir;
-                let shape = scene_shapes[result.shape_id];
+            let sigma_t = medium.sigma_a + medium.sigma_s;
+
+            let t = -log(1 - rand(seed)) / sigma_t;
+            if (t < max_t) {
+                scatter = true;
+
+                vertex_position = ray.origin + t * ray.dir;
+                vertex_interior_medium_id = current_medium_id;
+                vertex_exterior_medium_id = current_medium_id;
+
+                transmittance = -sigma_t * vec3(t);
+                trans_pdf = exp(-sigma_t * t) * sigma_t;
+            } else {
+                if (surface_result.shape_id == -1) {
+                    vertex_position = ray.origin + max_t * ray.dir;
+                    vertex_interior_medium_id = current_medium_id;
+                    vertex_exterior_medium_id = current_medium_id;
+                }
+                transmittance = -sigma_t * vec3(max_t);
+                trans_pdf = exp(-sigma_t * max_t) * sigma_t;
+            }
+        }
+
+        current_path_throughput *= (transmittance / trans_pdf);
+
+        if (!scatter) {
+            if (surface_result.shape_id != -1) {
+                let shape = scene_shapes[surface_result.shape_id];
                 if (shape.light_id != -1) {
-                    let vertex_normal = normalize(vertex_position - shape.center);
-                    radiance += select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(vertex_normal, -ray.dir) <= 0);
+                    radiance += select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(vertex_geometric_normal, -ray.dir) <= 0);
                 }
             }
         }
+
+        if (MAX_DEPTH != -1 && bounces == MAX_DEPTH - 1) {
+            break;
+        }
+
+        if (!scatter) {
+            if (surface_result.shape_id != -1) {
+                // TODO: if (surface_vertex->material_id == -1)
+                ray = Ray(vertex_position, ray.dir);
+                current_medium_id = update_medium_id(
+                    current_medium_id,
+                    vertex_interior_medium_id,
+                    vertex_exterior_medium_id,
+                    vertex_geometric_normal,
+                    ray.dir
+                );
+                continue;
+            }
+        }
+
+        if (!scatter) {
+            break;
+        }
+        let medium = scene_media[current_medium_id];
+        let dir_view = -ray.dir;
+        let phase_rnd_param_uv = vec2(rand(seed), rand(seed));
+        let next_dir = sample_phase_function(dir_view, phase_rnd_param_uv);
+        let f = eval_phase_function(dir_view, next_dir);
+        let p2 = pdf_sample_phase(dir_view, next_dir);
+        current_path_throughput *= medium.sigma_s * (f / p2);
+
+        if (bounces >= RR_DEPTH) {
+            let rr_prob = min(max(current_path_throughput.x, max(current_path_throughput.y, current_path_throughput.z)), 0.95);
+            if (rand(seed) > rr_prob) {
+                break;
+            }
+            current_path_throughput /= rr_prob;
+        }
+
+        ray = Ray(vertex_position, next_dir);
+        current_medium_id = update_medium_id(
+            current_medium_id,
+            vertex_interior_medium_id,
+            vertex_exterior_medium_id,
+            vertex_geometric_normal,
+            ray.dir
+        );
+
+        // var c1 = vec3(0.0);
+        // {
+        //     let light_uv = vec2(rand(seed), rand(seed));
+        //     let light_w = rand(seed);
+        //     let shape_w = rand(seed);
+        //     var light_id = 0;
+        //     for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
+        //         if (scene_lights[i].cdf > light_w) {
+        //             light_id = i;
+        //             break;
+        //         }
+        //     }
+        //     // return vec4(1.0, 0.0, f32(light_id), 1.0);
+        //     let light = scene_lights[light_id];
+        //     let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
+        //     // return vec4(point_on_light.normal * 0.5 + 0.5, 1);
+        //     var g = 0.0;
+        //     let dir_light = normalize(point_on_light.position - vertex_position);
+        //     let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
+        //     if (true) { // TODO: !occluded(scene, shadow_ray)
+        //         g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
+        //     }
+        //     let p1 = (light.cdf - select(0, scene_lights[max(0, light_id - 1)].cdf, light_id > 0)) *
+        //         pdf_point_on_sphere(scene_shapes[light.shape_id], point_on_light, vertex_position);
+        //     if (g > 0 && p1 > 0) {
+        //         let dir_view = -ray.dir;
+        //         let f = eval_phase_function(dir_view, dir_light);
+        //         let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
+        //         let t = exp(-sigma_t * distance(vertex_position, point_on_light.position));
+        //         c1 = medium.sigma_s * transmittance * t * g * f * l / p1;
+        //     }
+        //     // else { c1 = vec3(1.0, 0.0, 0); }
+        // }
     }
     return radiance;
+}
+
+fn update_medium_id(
+    current_medium_id: i32,
+    vertex_interior_medium_id: i32,
+    vertex_exterior_medium_id: i32,
+    vertex_geometric_normal: vec3<f32>,
+    ray_dir: vec3<f32>,
+) -> i32 {
+    if (vertex_interior_medium_id != vertex_exterior_medium_id) {
+        if (dot(ray_dir, vertex_geometric_normal) > 0) {
+            return vertex_exterior_medium_id;
+        } else {
+            return vertex_interior_medium_id;
+        }
+    }
+    return current_medium_id;
 }
 
 // PRNG for GPU
@@ -244,6 +341,25 @@ fn eval_phase_function(dir_in: vec3<f32>, dir_out: vec3<f32>) -> vec3<f32> {
         1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) /
             pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5)
     );
+}
+
+fn sample_phase_function(dir_in: vec3<f32>, rnd_param: vec2<f32>) -> vec3<f32> {
+    if (HENYEY_G < 1.0e-3) {
+        let z = 1 - 2 * rnd_param.x;
+        let r = sqrt(max(0.0, 1 - z * z));
+        let phi = 2 * PI * rnd_param.y;
+        return vec3(r * cos(phi), r * sin(phi), z);
+    } else {
+        let tmp = (HENYEY_G * HENYEY_G - 1) / (2 * rnd_param.x * HENYEY_G - (HENYEY_G + 1));
+        let cos_elevation = (tmp * tmp - (1 + HENYEY_G * HENYEY_G)) / (2 * HENYEY_G);
+        let sin_elevation = sqrt(max(1 - cos_elevation * cos_elevation, 0.0));
+        let azimuth = 2 * PI * rnd_param.y;
+        return to_world_frame(dir_in, vec3(sin_elevation * cos(azimuth), sin_elevation * sin(azimuth), cos_elevation));
+    }
+}
+
+fn pdf_sample_phase(dir_in: vec3<f32>, dir_out: vec3<f32>) -> f32 {
+    return 1 / (4 * PI) * (1 - HENYEY_G * HENYEY_G) / pow((1 + HENYEY_G * HENYEY_G + 2 * HENYEY_G * dot(dir_in, dir_out)), 1.5);
 }
 
 // Rays
