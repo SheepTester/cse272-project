@@ -22,7 +22,7 @@ export const scene: Scene = {
       }
     },
     {
-      center: vec3.fromValues(-1.5, -1.5, 2),
+      center: vec3.fromValues(-1.5, 1.5, 2),
       radius: 2,
       hasMaterial: true,
       exterior: medium1,

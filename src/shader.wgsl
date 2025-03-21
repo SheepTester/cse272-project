@@ -103,7 +103,7 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
     return best;
 }
 
-const SAMPLES = 1024;
+const SAMPLES = 1024 / 4;
 const RR_DEPTH = 5;
 
 @fragment
@@ -111,7 +111,7 @@ fn fragment_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var seed = seed_per_thread(u32((vertex.uv.x * canvas_size.x + vertex.uv.y) * canvas_size.y) + 69);
     var sum = vec3(0.0);
     for (var i = 0; i < SAMPLES; i++) {
-        sum += get_color(vertex.uv, &seed) / f32(SAMPLES);
+        sum += max(get_color(vertex.uv, &seed), vec3(0.0)) / f32(SAMPLES);
     }
     return vec4(sqrt(sum), 1.0);
 }
@@ -298,7 +298,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                     f = eval_phase_function(dir_view, dir_light);
                 } else {
                     // TODO: eval material (no.)
-                    f = vec3(1.0, 0.0, 0.0);
+                    // f = vec3(1.0, 0.0, 0.0);
                 }
                 var sigma_s = vec3(1.0);
                 if scatter {
@@ -306,17 +306,17 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                     sigma_s = vec3(medium.sigma_s);
                 }
                 let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
-                c1 = current_path_throughput * sigma_s * t_light * g * f * l / p1;
+                c1 = vd(current_path_throughput) * vd(sigma_s) * vd(t_light) * id(g) * vd(f) * vd(l) / id(p1);
                 var p2 = 0.0;
                 if scatter {
                     let medium = scene_media[current_medium_id];
                     p2 = pdf_sample_phase(dir_view, dir_light) * g;
                 }
                 p2 *= p_trans_dir;
-                w1 = (p1 * p1) / (p1 * p1 + p2 * p2);
+                w1 = (id(p1) * id(p1)) / (id(p1) * id(p1) + id(p2) * id(p2));
             }
         }
-        radiance += max(c1 * w1, vec3(0.0));
+        radiance += vd(c1) * id(w1); // max(c1, vec3(0.0)) * max(w1, 0.0); // max(c1 * w1, vec3(0.0));
 
         if !scatter {
             break;
@@ -542,4 +542,17 @@ fn pdf_point_on_sphere(sphere: Sphere, point_on_shape: PointAndNormal, ref_point
     let dir = normalize(p_on_sphere - ref_point);
     return pdf_solid_angle * abs(dot(n_on_sphere, dir)) /
         distance_squared(ref_point, p_on_sphere);
+}
+
+fn id(x: f32) -> f32 {
+    return x;
+}
+fn idd(x: f32) -> f32 {
+    return max(x, 0.0);
+}
+fn vd(x: vec3<f32>) -> vec3<f32> {
+    return x;
+}
+fn vdd(x: vec3<f32>) -> vec3<f32> {
+    return max(x, vec3(0.0));
 }
