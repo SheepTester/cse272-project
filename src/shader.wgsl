@@ -123,6 +123,10 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
     var current_medium_id = camera_medium_id;
     var radiance = vec3(0.0);
     var current_path_throughput = vec3(1.0);
+    var dir_pdf = 0.0;
+    var nee_p_cache = vec3(0.0);
+    var multi_trans_pdf = 1.0;
+    let never_scatter = true;
     for (var bounces = 0; max_depth == -1 || bounces < max_depth; bounces++) {
         let surface_result = intersect_scene(ray);
         var scatter = false;
@@ -168,14 +172,31 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
                 trans_pdf = exp(-sigma_t * max_t) * sigma_t;
             }
         }
+        multi_trans_pdf *= trans_pdf;
 
         current_path_throughput *= (transmittance / trans_pdf);
+
+        if !scatter && surface_result.shape_id == -1 {
+            break;
+        }
 
         if !scatter {
             if surface_result.shape_id != -1 {
                 let shape = scene_shapes[surface_result.shape_id];
                 if shape.light_id != -1 {
-                    radiance += select(scene_lights[shape.light_id].intensity, vec3(0.0), dot(vertex_geometric_normal, -ray.dir) <= 0);
+                    let light = scene_lights[shape.light_id];
+                    if never_scatter {
+                        radiance += current_path_throughput * select(light.intensity, vec3(0.0), dot(vertex_geometric_normal, -ray.dir) <= 0);
+                    } else {
+                        let light_point = PointAndNormal(vertex_position, vertex_geometric_normal);
+                        let light_pmf = light.cdf - select(0, scene_lights[max(0, shape.light_id - 1)].cdf, shape.light_id > 0);
+                        let p_nee = light_pmf * pdf_point_on_sphere(scene_shapes[light.shape_id], light_point, nee_p_cache);
+                        let light_dir = normalize(vertex_position - nee_p_cache);
+                        let g = abs(dot(vertex_geometric_normal, light_dir)) / distance_squared(nee_p_cache, vertex_position);
+                        let p_dir = dir_pdf * multi_trans_pdf * g;
+                        let w2 = (p_dir * p_dir) / (p_dir * p_dir + p_nee * p_nee);
+                        radiance += current_path_throughput * select(light.intensity, vec3(0.0), dot(vertex_geometric_normal, -ray.dir) <= 0) * w2;
+                    }
                 }
             }
         }
@@ -200,6 +221,101 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             }
         }
 
+        nee_p_cache = vertex_position;
+        multi_trans_pdf = 1;
+
+        var c1 = vec3(0.0);
+        var w1 = 0.0;
+        {
+            let light_uv = vec2(rand(seed), rand(seed));
+            let light_w = rand(seed);
+            let shape_w = rand(seed);
+            var light_id = 0;
+            for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
+                if scene_lights[i].cdf > light_w {
+                    light_id = i;
+                    break;
+                }
+            }
+            let light = scene_lights[light_id];
+            let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
+            var t_light = vec3(1.0);
+            var p = vertex_position;
+            var shadow_medium_id = current_medium_id;
+            var shadow_bounces = 0;
+            var p_trans_dir = 1.0;
+            while true {
+                let dir_light = normalize(point_on_light.position - p);
+                let shadow_ray = Ray(p, dir_light, 0.1);
+                let far = distance(point_on_light.position, p) * (1.0 - shadow_ray.near);
+                let shadow_result = intersect_scene(shadow_ray);
+                var next_t = far;
+                if shadow_result.shape_id != -1 && shadow_result.distance <= far {
+                    next_t = shadow_result.distance;
+                }
+
+                if (shadow_medium_id >= 0) {
+                    let medium = scene_media[shadow_medium_id];
+                    let sigma_t = medium.sigma_s + medium.sigma_a;
+                    t_light *= exp(-sigma_t * next_t);
+                    p_trans_dir *= exp(-sigma_t * next_t);
+                }
+
+                if shadow_result.shape_id == -1 {
+                    break;
+                } else {
+                    let shape = scene_shapes[shadow_result.shape_id];
+                    if (shape.material_id >= 0) {
+                        t_light = vec3(0.0);
+                        break;
+                    }
+                    shadow_bounces++;
+                    if max_depth != -1 && bounces + shadow_bounces + 1 >= max_depth {
+                        t_light = vec3(0.0);
+                        break;
+                    }
+                    shadow_medium_id = update_medium_id(
+                        shadow_medium_id,
+                        shape.interior_medium_id,
+                        shape.exterior_medium_id,
+                        normalize(shadow_ray.origin + shadow_result.distance * shadow_ray.dir - shape.center),
+                        shadow_ray.dir,
+                    );
+                    p += next_t * dir_light;
+                }
+            }
+
+            if max(t_light.x, max(t_light.y, t_light.z)) > 0 {
+                let dir_light = normalize(point_on_light.position - vertex_position);
+                let g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
+                let light_pmf = light.cdf - select(0, scene_lights[max(0, light_id - 1)].cdf, light_id > 0);
+                let p1 = light_pmf * pdf_point_on_sphere(scene_shapes[light.shape_id], point_on_light, vertex_position);
+                let dir_view = -ray.dir;
+                var f = vec3(0.0);
+                if scatter {
+                    let medium = scene_media[current_medium_id];
+                    f = eval_phase_function(dir_view, dir_light);
+                } else {
+                    // TODO: eval material (no.)
+                }
+                var sigma_s = vec3(1.0);
+                if scatter {
+                    let medium = scene_media[current_medium_id];
+                    sigma_s = vec3(medium.sigma_s);
+                }
+                let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
+                c1 = current_path_throughput * sigma_s * t_light * g * f * l / p1;
+                var p2 = 0.0;
+                if scatter {
+                    let medium = scene_media[current_medium_id];
+                    p2 = pdf_sample_phase(dir_view, dir_light) * g;
+                }
+                p2 *= p_trans_dir;
+                w1 = (p1 * p1) / (p1 * p1 + p2 * p2);
+            }
+        }
+        radiance += c1 * w1;
+
         if !scatter {
             break;
         }
@@ -209,6 +325,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
         let next_dir = sample_phase_function(dir_view, phase_rnd_param_uv);
         let f = eval_phase_function(dir_view, next_dir);
         let p2 = pdf_sample_phase(dir_view, next_dir);
+        dir_pdf = p2;
         current_path_throughput *= medium.sigma_s * (f / p2);
 
         if bounces >= RR_DEPTH {
@@ -227,40 +344,6 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             vertex_geometric_normal,
             ray.dir
         );
-
-        // var c1 = vec3(0.0);
-        // {
-        //     let light_uv = vec2(rand(seed), rand(seed));
-        //     let light_w = rand(seed);
-        //     let shape_w = rand(seed);
-        //     var light_id = 0;
-        //     for (var i = 0; i < i32(arrayLength(&scene_lights)); i++) {
-        //         if scene_lights[i].cdf > light_w {
-        //             light_id = i;
-        //             break;
-        //         }
-        //     }
-        //     // return vec4(1.0, 0.0, f32(light_id), 1.0);
-        //     let light = scene_lights[light_id];
-        //     let point_on_light = sample_point_on_sphere(scene_shapes[light.shape_id], vertex_position, light_uv);
-        //     // return vec4(point_on_light.normal * 0.5 + 0.5, 1);
-        //     var g = 0.0;
-        //     let dir_light = normalize(point_on_light.position - vertex_position);
-        //     let shadow_ray = Ray(vertex_position, dir_light); // doesn't use get_shadow_epsilon(scene)
-        //     if true { // TODO: !occluded(scene, shadow_ray)
-        //         g = max(-dot(dir_light, point_on_light.normal), 0.0) / distance_squared(point_on_light.position, vertex_position);
-        //     }
-        //     let p1 = (light.cdf - select(0, scene_lights[max(0, light_id - 1)].cdf, light_id > 0)) *
-        //         pdf_point_on_sphere(scene_shapes[light.shape_id], point_on_light, vertex_position);
-        //     if g > 0 && p1 > 0 {
-        //         let dir_view = -ray.dir;
-        //         let f = eval_phase_function(dir_view, dir_light);
-        //         let l = select(light.intensity, vec3(0.0), dot(point_on_light.normal, -dir_light) <= 0);
-        //         let t = exp(-sigma_t * distance(vertex_position, point_on_light.position));
-        //         c1 = medium.sigma_s * transmittance * t * g * f * l / p1;
-        //     }
-        //     // else { c1 = vec3(1.0, 0.0, 0); }
-        // }
     }
     return radiance;
 }
