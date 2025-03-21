@@ -2,6 +2,11 @@ import { captureError } from './utils'
 import shaderCode from './shader.wgsl'
 import { mat4, vec3 } from 'wgpu-matrix'
 import { Medium, Scene, toData } from './scene'
+import { scene } from './scenes/volpath-test3'
+
+if (!navigator.gpu) {
+  alert('Your browser doesnt support WebGPU, or it is not enabled.')
+}
 
 const canvas = document.getElementById('canvas')
 if (!(canvas instanceof HTMLCanvasElement)) {
@@ -117,29 +122,6 @@ device.queue.writeBuffer(
   mat4.aim([0, 0, -3], [0, 0, 0], [0, 1, 0], mat4.create())
 )
 
-const medium: Medium = { sigmaA: 0.1, sigmaS: 0.7 }
-const scene: Scene = {
-  media: [medium],
-  shapes: [
-    {
-      center: vec3.fromValues(0, 0, 0),
-      radius: 1,
-      exterior: medium,
-      light: {
-        intensity: vec3.fromValues(0.4, 2.32, 3.2)
-      }
-    },
-    {
-      center: vec3.fromValues(-3, 0, -1.5),
-      radius: 1.5,
-      exterior: medium,
-      light: {
-        intensity: vec3.fromValues(24, 10, 24)
-      }
-    }
-  ],
-  cameraMedium: medium
-}
 const { media, shapes, lights, cameraMedium } = toData(scene)
 
 const mediaBuffer = device.createBuffer({
@@ -309,11 +291,11 @@ do {
   //   Math.sin(Date.now() / 1000),
   //   Math.cos(Date.now() / 1789) + 1
   // )
-  scene.shapes[1].center = vec3.fromValues(
-    Math.sin(Date.now() / -2837) * 5,
-    0,
-    Math.cos(Date.now() / -2837) * 5
-  )
+  // scene.shapes[1].center = vec3.fromValues(
+  //   Math.sin(Date.now() / -2837) * 5,
+  //   0,
+  //   Math.cos(Date.now() / -2837) * 5
+  // )
 
   const { media, shapes, lights, cameraMedium } = toData(scene)
   device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
@@ -324,7 +306,7 @@ do {
   /** 1/s */
   const DRAG_CONST = 2
   /** world units / s */
-  const MOVE_CONST = 0.5
+  const MOVE_CONST = 0.3
   const t = Math.min((performance.now() - start) / 1000, 0.1)
   const newVelocity = { x: 0, y: 0, z: 0 }
   // vel += -drag * vel * time
