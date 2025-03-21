@@ -36,14 +36,13 @@ struct Medium {
 }
 
 struct Sphere {
-    // material_id: i32,
+    material_id: i32,
     light_id: i32,
     interior_medium_id: i32,
     exterior_medium_id: i32,
 
-    radius: f32,
-    // vec3 has 4-byte alignment
     center: vec3<f32>,
+    radius: f32,
 }
 
 struct Light {
@@ -188,16 +187,17 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
 
         if (!scatter) {
             if (surface_result.shape_id != -1) {
-                // TODO: if (surface_vertex->material_id == -1)
-                ray = Ray(vertex_position, ray.dir);
-                current_medium_id = update_medium_id(
-                    current_medium_id,
-                    vertex_interior_medium_id,
-                    vertex_exterior_medium_id,
-                    vertex_geometric_normal,
-                    ray.dir
-                );
-                continue;
+                if (scene_shapes[surface_result.shape_id].material_id == -1) {
+                    ray = Ray(vertex_position, ray.dir);
+                    current_medium_id = update_medium_id(
+                        current_medium_id,
+                        vertex_interior_medium_id,
+                        vertex_exterior_medium_id,
+                        vertex_geometric_normal,
+                        ray.dir
+                    );
+                    continue;
+                }
             }
         }
 

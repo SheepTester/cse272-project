@@ -8,6 +8,7 @@ export const scene: Scene = {
     {
       center: vec3.fromValues(0, 0, 0),
       radius: 1,
+      hasMaterial: true,
       exterior: medium,
       light: {
         intensity: vec3.fromValues(0.4, 2.32, 3.2)
@@ -16,6 +17,7 @@ export const scene: Scene = {
     {
       center: vec3.fromValues(-3, 0, -1.5),
       radius: 1.5,
+      hasMaterial: true,
       exterior: medium,
       light: {
         intensity: vec3.fromValues(24, 10, 24)

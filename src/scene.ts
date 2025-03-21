@@ -12,6 +12,7 @@ export type Sphere = {
   light?: Light
   interior?: Medium
   exterior?: Medium
+  hasMaterial: boolean
 }
 
 export type Light = {
@@ -41,8 +42,9 @@ export function toData ({ media, shapes, cameraMedium }: Scene): SceneData {
   const lights: { light: Light; sphere: Sphere; shapeIndex: number }[] = []
   const shapesView = new DataView(new ArrayBuffer(shapes.length * 8 * 4))
   for (const [i, sphere] of shapes.entries()) {
+    shapesView.setInt32((i * 8 + 0) * 4, sphere.hasMaterial ? 0 : -1, true)
     shapesView.setInt32(
-      (i * 8 + 0) * 4,
+      (i * 8 + 1) * 4,
       sphere.light ? lights.length : -1,
       true
     )
@@ -50,20 +52,19 @@ export function toData ({ media, shapes, cameraMedium }: Scene): SceneData {
       lights.push({ light: sphere.light, sphere, shapeIndex: i })
     }
     shapesView.setInt32(
-      (i * 8 + 1) * 4,
+      (i * 8 + 2) * 4,
       sphere.interior ? media.indexOf(sphere.interior) : -1,
       true
     )
     shapesView.setInt32(
-      (i * 8 + 2) * 4,
+      (i * 8 + 3) * 4,
       sphere.exterior ? media.indexOf(sphere.exterior) : -1,
       true
     )
-    shapesView.setFloat32((i * 8 + 3) * 4, sphere.radius, true)
     shapesView.setFloat32((i * 8 + 4) * 4, sphere.center[0], true)
     shapesView.setFloat32((i * 8 + 5) * 4, sphere.center[1], true)
     shapesView.setFloat32((i * 8 + 6) * 4, sphere.center[2], true)
-    shapesView.setFloat32((i * 8 + 6) * 4, sphere.center[2], true)
+    shapesView.setFloat32((i * 8 + 7) * 4, sphere.radius, true)
   }
 
   const { cdf } = makeTableDist1d(lights)
