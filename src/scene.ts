@@ -20,9 +20,9 @@ export type Light = {
 }
 
 export type Scene = {
-  media: Medium[]
   shapes: Sphere[]
   cameraMedium: Medium
+  maxDepth: number
 }
 
 export type SceneData = {
@@ -30,15 +30,11 @@ export type SceneData = {
   shapes: DataView<ArrayBuffer>
   lights: DataView<ArrayBuffer>
   cameraMedium: Int32Array
+  maxDepth: Int32Array
 }
 
-export function toData ({ media, shapes, cameraMedium }: Scene): SceneData {
-  const mediaView = new DataView(new ArrayBuffer(media.length * 2 * 4))
-  for (const [i, medium] of media.entries()) {
-    mediaView.setFloat32((i * 2 + 0) * 4, medium.sigmaA, true)
-    mediaView.setFloat32((i * 2 + 1) * 4, medium.sigmaS, true)
-  }
-
+export function toData ({ shapes, cameraMedium, maxDepth }: Scene): SceneData {
+  const media: Medium[] = [cameraMedium]
   const lights: { light: Light; sphere: Sphere; shapeIndex: number }[] = []
   const shapesView = new DataView(new ArrayBuffer(shapes.length * 8 * 4))
   for (const [i, sphere] of shapes.entries()) {
@@ -50,6 +46,12 @@ export function toData ({ media, shapes, cameraMedium }: Scene): SceneData {
     )
     if (sphere.light) {
       lights.push({ light: sphere.light, sphere, shapeIndex: i })
+    }
+    if (sphere.interior && !media.includes(sphere.interior)) {
+      media.push(sphere.interior)
+    }
+    if (sphere.exterior && !media.includes(sphere.exterior)) {
+      media.push(sphere.exterior)
     }
     shapesView.setInt32(
       (i * 8 + 2) * 4,
@@ -67,6 +69,12 @@ export function toData ({ media, shapes, cameraMedium }: Scene): SceneData {
     shapesView.setFloat32((i * 8 + 7) * 4, sphere.radius, true)
   }
 
+  const mediaView = new DataView(new ArrayBuffer(media.length * 2 * 4))
+  for (const [i, medium] of media.entries()) {
+    mediaView.setFloat32((i * 2 + 0) * 4, medium.sigmaA, true)
+    mediaView.setFloat32((i * 2 + 1) * 4, medium.sigmaS, true)
+  }
+
   const { cdf } = makeTableDist1d(lights)
   const lightsView = new DataView(new ArrayBuffer(lights.length * 8 * 4))
   for (const [i, { light, shapeIndex }] of lights.entries()) {
@@ -81,7 +89,8 @@ export function toData ({ media, shapes, cameraMedium }: Scene): SceneData {
     media: mediaView,
     shapes: shapesView,
     lights: lightsView,
-    cameraMedium: new Int32Array([media.indexOf(cameraMedium)])
+    cameraMedium: new Int32Array([media.indexOf(cameraMedium)]),
+    maxDepth: new Int32Array([maxDepth])
   }
 }
 

@@ -13,6 +13,7 @@ struct VertexOutput {
 @group(0) @binding(4) var<storage, read> scene_shapes: array<Sphere>;
 @group(0) @binding(5) var<storage, read> scene_lights: array<Light>;
 @group(0) @binding(6) var<uniform> camera_medium_id: i32;
+@group(0) @binding(7) var<uniform> max_depth: i32;
 
 @vertex
 fn vertex_main(
@@ -102,7 +103,6 @@ fn intersect_scene(ray: Ray) -> IntersectResult {
 }
 
 const SAMPLES = 1024;
-const MAX_DEPTH = 6;
 const RR_DEPTH = 5;
 
 @fragment
@@ -123,7 +123,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
     var current_medium_id = camera_medium_id;
     var radiance = vec3(0.0);
     var current_path_throughput = vec3(1.0);
-    for (var bounces = 0; MAX_DEPTH == -1 || bounces < MAX_DEPTH; bounces++) {
+    for (var bounces = 0; max_depth == -1 || bounces < max_depth; bounces++) {
         let surface_result = intersect_scene(ray);
         var scatter = false;
         var vertex_position = vec3(0.0);
@@ -180,7 +180,7 @@ fn get_color(vertex_uv: vec2<f32>, seed: ptr<function, u32>) -> vec3<f32> {
             }
         }
 
-        if MAX_DEPTH != -1 && bounces == MAX_DEPTH - 1 {
+        if max_depth != -1 && bounces == max_depth - 1 {
             break;
         }
 

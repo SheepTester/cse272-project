@@ -3,7 +3,6 @@ import { Medium, Scene } from '../scene'
 
 const medium: Medium = { sigmaA: 0.1, sigmaS: 0.7 }
 export const scene: Scene = {
-  media: [medium],
   shapes: [
     {
       center: vec3.fromValues(0, 0, 0),
@@ -24,5 +23,6 @@ export const scene: Scene = {
       }
     }
   ],
-  cameraMedium: medium
+  cameraMedium: medium,
+  maxDepth: 2
 }

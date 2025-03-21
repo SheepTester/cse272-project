@@ -1,7 +1,7 @@
 import { captureError } from './utils'
 import shaderCode from './shader.wgsl'
-import { mat4, vec3 } from 'wgpu-matrix'
-import { Medium, Scene, toData } from './scene'
+import { mat4 } from 'wgpu-matrix'
+import { toData } from './scene'
 import { scene } from './scenes/volpath-test3'
 
 if (!navigator.gpu) {
@@ -122,7 +122,7 @@ device.queue.writeBuffer(
   mat4.aim([0, 0, -4], [0, 0, 0], [0, 1, 0], mat4.create())
 )
 
-const { media, shapes, lights, cameraMedium } = toData(scene)
+const { media, shapes, lights, cameraMedium, maxDepth } = toData(scene)
 
 const mediaBuffer = device.createBuffer({
   size: media.buffer.byteLength,
@@ -140,10 +140,15 @@ const cameraMediumBuffer = device.createBuffer({
   size: cameraMedium.buffer.byteLength,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 })
+const maxDepthBuffer = device.createBuffer({
+  size: maxDepth.buffer.byteLength,
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+})
 device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
 device.queue.writeBuffer(shapesBuffer, 0, shapes.buffer)
 device.queue.writeBuffer(lightsBuffer, 0, lights.buffer)
 device.queue.writeBuffer(cameraMediumBuffer, 0, cameraMedium.buffer)
+device.queue.writeBuffer(maxDepthBuffer, 0, maxDepth.buffer)
 
 const uniforms = device.createBindGroup({
   layout: pipeline.getBindGroupLayout(0),
@@ -154,7 +159,8 @@ const uniforms = device.createBindGroup({
     { binding: 3, resource: { buffer: mediaBuffer } },
     { binding: 4, resource: { buffer: shapesBuffer } },
     { binding: 5, resource: { buffer: lightsBuffer } },
-    { binding: 6, resource: { buffer: cameraMediumBuffer } }
+    { binding: 6, resource: { buffer: cameraMediumBuffer } },
+    { binding: 7, resource: { buffer: maxDepthBuffer } }
   ]
 })
 
