@@ -1,8 +1,8 @@
 import { captureError } from './utils'
 import shaderCode from './shader_part3.wgsl'
-import { mat4 } from 'wgpu-matrix'
+import { mat4, vec3 } from 'wgpu-matrix'
 import { toData } from './scene'
-import { scene } from './scenes/volpath-test3'
+import { scene } from './scenes/volpath-test4'
 
 if (!navigator.gpu) {
   alert('Your browser doesnt support WebGPU, or it is not enabled.')
@@ -169,7 +169,7 @@ await check()
 const camera = {
   x: 0,
   y: 0,
-  z: -3,
+  z: -4,
   xv: 0,
   yv: 0,
   zv: 0,
@@ -302,6 +302,11 @@ do {
   //   0,
   //   Math.cos(Date.now() / -2837) * 5
   // )
+  scene.shapes[1].center = vec3.fromValues(
+    1.5,
+    Math.sin(Date.now() / 1000) * 1.5,
+    2
+  )
 
   const { media, shapes, lights, cameraMedium } = toData(scene)
   device.queue.writeBuffer(mediaBuffer, 0, media.buffer)
